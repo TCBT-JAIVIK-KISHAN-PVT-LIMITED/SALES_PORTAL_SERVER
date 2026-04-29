@@ -4,6 +4,8 @@ import {
   Req,
   Body,
   UnauthorizedException,
+  Get,
+  Param,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
@@ -74,11 +76,19 @@ export class PaymentsController {
     const expectedHash = crypto
       .createHmac('sha256', secret)
       .update(rawBody)
-      .digest('hex');
+      .digest('base64'); // ✅ Zoho sends base64, not hex
+
+    console.log('Expected (base64):', expectedHash);
+    console.log('Received:', signature);
 
     return crypto.timingSafeEqual(
-      Buffer.from(expectedHash, 'hex'),
-      Buffer.from(signature, 'hex'),
+      Buffer.from(expectedHash),
+      Buffer.from(signature),
     );
+  }
+
+  @Get('verify/:orderId')
+  async verifyPayment(@Param('orderId') orderId: string) {
+    return this.ordersService.verifyAndConfirmOrder(orderId);
   }
 }

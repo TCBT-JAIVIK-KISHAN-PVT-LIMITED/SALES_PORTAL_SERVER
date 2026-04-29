@@ -25,14 +25,16 @@ export class OrdersService {
   ) { }
 
   async createOrder(userId: string, dto: any) {
-    const { items, address } = dto;
+    const { items, address, totalWeight } = dto;
+
+    if (!totalWeight || totalWeight <= 0) {
+      throw new BadRequestException('Invalid total weight from cart');
+    }
 
     let totalAmount = 0;
-    let totalWeight = 0;
 
     const processedItems = items.map((item: any) => {
       totalAmount += item.price * item.quantity;
-      totalWeight += item.weight * item.quantity;
 
       return {
         productId: item.productId,
@@ -44,8 +46,11 @@ export class OrdersService {
       };
     });
 
-    const type_of_package = totalWeight < 20 ? 'SPS' : 'B2B';
+    const type_of_package = totalWeight < 20000 ? 'SPS' : 'B2B';
 
+    console.log('Total Weight:', totalWeight);
+    console.log('Type of Package:', type_of_package);
+    console.log('Delivery Pincode:', address.pincode);
     const shipping = await this.shippingService.calculateRate(
       totalWeight,
       Number(address.pincode),
@@ -53,6 +58,7 @@ export class OrdersService {
     );
 
     const shippingCharge = shipping.shippingCharge;
+    console.log('Calculated Shipping Charge:', shippingCharge);
     const finalAmount = totalAmount + shippingCharge;
 
     const order = await this.orderModel.create({
@@ -74,6 +80,8 @@ export class OrdersService {
     await order.save();
 
     return {
+      shippingCharge,
+      finalAmount,
       orderId: order.orderId,
       paymentSessionId: order.paymentSessionId,
     };
@@ -116,6 +124,7 @@ export class OrdersService {
     const order = await this.createOrder(userId, {
       items,
       address,
+      totalWeight: cart.totalWeight,
     });
 
 
@@ -131,14 +140,19 @@ export class OrdersService {
   async getOrders(userId: string, page: number, limit: number) {
     const skip = (page - 1) * limit;
 
+    const filter = {
+      userId,
+      paymentStatus: { $in: ['paid', 'failed'] },
+    };
+
     const [orders, total] = await Promise.all([
       this.orderModel
-        .find({ userId })
+        .find(filter)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
 
-      this.orderModel.countDocuments({ userId }),
+      this.orderModel.countDocuments(filter),
     ]);
 
     return {
@@ -233,6 +247,52 @@ export class OrdersService {
     }
   }
 
+  async verifyAndConfirmOrder(orderId: string): Promise<any> {
+    const order = await this.orderModel.findOne({ orderId });
+
+    if (!order) throw new NotFoundException('Order not found');
+
+    console.log('🔍 Order found:', {
+      orderId: order?.orderId,
+      paymentStatus: order?.paymentStatus,
+      paymentSessionId: order?.paymentSessionId,
+    });
+
+
+    if (order.paymentStatus === 'paid') {
+      return { status: 'paid', orderId: order.orderId };
+    }
+
+    if (!order.paymentSessionId) {
+      throw new BadRequestException('No payment session linked to this order');
+    }
+
+    const result = await this.paymentService.verifyPaymentSessionStatus(
+      order.paymentSessionId,
+    );
+
+    console.log('🔍 Zoho session result:', result);
+
+    const { status, paymentId, amount } = result;
+
+    if (status === 'succeeded' && paymentId && amount) {
+
+      await this.handlePaymentSuccess(
+        orderId,
+        paymentId,
+        parseFloat(amount),
+      );
+      return { status: 'paid', orderId: order.orderId };
+    }
+
+    if (status === 'failed') {
+      await this.handlePaymentFailure(orderId);
+      return { status: 'failed', orderId: order.orderId };
+    }
+
+    return { status: 'pending', orderId: order.orderId };
+  }
+
   async handlePaymentFailure(orderId: string) {
     const order = await this.orderModel.findOne({ orderId });
 
@@ -243,4 +303,4 @@ export class OrdersService {
     order.paymentStatus = 'failed';
     await order.save();
   }
-}
+} 

@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Body, Param } from '@nestjs/common';
+import { Controller, Get, Patch, Body, Param, Delete } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { AddAddressDto } from './dto/add-address.dto';
 
@@ -33,5 +33,13 @@ export class UsersController {
   @Get(':id/address/:addressId')
   getUserAddress(@Param('id') id: string, @Param('addressId') addressId: string) {
     return this.usersService.findAddressById(id, addressId);
+  }
+
+  @Delete(':id/address/:addressId')
+  deleteUserAddress(
+    @Param('id') id: string,
+    @Param('addressId') addressId: string,
+  ) {
+    return this.usersService.deleteAddress(id, addressId);
   }
 }

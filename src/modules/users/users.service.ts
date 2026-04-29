@@ -97,4 +97,33 @@ export class UsersService {
     const user = await this.userModel.findById(userId);
     return user?.addresses.find((addr: any) => addr._id.toString() === addressId) || null;
   }
+
+  // 🔹 Delete address
+  async deleteAddress(userId: string, addressId: string) {
+    console.log('--- DELETE ADDRESS ---');
+    console.log('User ID:', userId);
+    console.log('Address ID:', addressId);
+
+    try {
+      const updatedUser = await this.userModel.findByIdAndUpdate(
+        userId,
+        {
+          $pull: {
+            addresses: { _id: addressId },
+          },
+        },
+        { new: true }
+      );
+
+      if (!updatedUser) {
+        throw new Error('User not found');
+      }
+
+      console.log('✅ Address removed');
+      return updatedUser.addresses;
+    } catch (error: any) {
+      console.log('❌ DELETE ERROR:', error.message);
+      throw error;
+    }
+  }
 }

@@ -8,7 +8,7 @@ export class ZohoPaymentGatewayService {
   constructor(
     private readonly zohoPaymentsService: ZohoPaymentsService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   // 💳 CREATE PAYMENT SESSION
   async createPaymentSession(order: any) {
@@ -79,6 +79,25 @@ export class ZohoPaymentGatewayService {
       );
       throw error;
     }
+  }
+
+  async verifyPaymentSessionStatus(sessionId: string): Promise<{
+    status: string;
+    paymentId: string | null;
+    amount: string | null;
+  }> {
+    const data = await this.getPaymentSession(sessionId);
+    const session = data?.payments_session;
+
+    const succeededPayment = session?.payments?.find(
+      (p: any) => p.status === 'succeeded',
+    );
+
+    return {
+      status: session?.status ?? 'unknown',
+      paymentId: succeededPayment?.payment_id ?? null,
+      amount: session?.amount ?? null,
+    };
   }
 
   // 💸 REFUND
