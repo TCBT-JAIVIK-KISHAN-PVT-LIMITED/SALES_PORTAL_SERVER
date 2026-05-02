@@ -20,6 +20,7 @@ export class CategoryService {
       {
         $match: {
           is_active: true,
+          show_in_storefront: true,
         },
       },
       {

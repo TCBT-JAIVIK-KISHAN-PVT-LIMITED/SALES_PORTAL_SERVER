@@ -11,6 +11,8 @@ import { User, UserSchema } from '../users/schemas/user.schema';
 import { UsersModule } from '../users/users.module';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { ShippingModule } from '../../integrations/shipping/shipping.module';
+import { SmsService } from './sms.service';
+import { CouponModule } from '../coupon/coupon.module';
 
 @Module({
   imports: [
@@ -24,8 +26,9 @@ import { ShippingModule } from '../../integrations/shipping/shipping.module';
     PaymentsModule,
     CartModule,
     ShippingModule,
+    CouponModule
   ],
   controllers: [OrdersController, PaymentsController],
-  providers: [OrdersService],
+  providers: [OrdersService, SmsService],
 })
 export class OrdersModule { }

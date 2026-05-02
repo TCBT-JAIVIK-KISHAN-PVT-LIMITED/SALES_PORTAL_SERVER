@@ -125,6 +125,7 @@ export class CartService {
       .find({
         _id: { $in: productIds },
         is_active: true,
+        show_in_storefront: true,
       })
       .select(
         'name price stock image weight weight_unit dimensions is_active',

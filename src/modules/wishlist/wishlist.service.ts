@@ -12,7 +12,7 @@ export class WishlistService {
 
     @InjectModel(Product.name)
     private productModel: Model<ProductDocument>,
-  ) {}
+  ) { }
 
   async getWishlist(userId: string) {
     let wishlist = await this.wishlistModel.findOne({ userId });
@@ -31,6 +31,7 @@ export class WishlistService {
     const products = await this.productModel.find({
       zoho_item_id: { $in: ids },
       is_active: true,
+      show_in_storefront: true,
     });
 
     // 🔥 Map products

@@ -9,7 +9,7 @@ export class ProductsController {
 
   @Get()
   async getProducts() {
-    return this.productsService.getPaginatedProducts();
+    return this.productsService.getActiveProducts();
   }
 
   @Post('sync-all-now')

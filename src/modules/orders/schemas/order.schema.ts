@@ -65,6 +65,12 @@ export class Order {
   @Prop()
   paymentId?: string;
 
+  @Prop()
+  couponName?: string;
+
+  @Prop({ default: 0 })
+  discount?: number;
+
   // 🔥 Zoho Inventory Fields
   @Prop()
   zohoSalesOrderId?: string;

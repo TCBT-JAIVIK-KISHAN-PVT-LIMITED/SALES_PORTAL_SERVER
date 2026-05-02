@@ -63,21 +63,18 @@ export class ProductsService {
 
   // 🔹 Get all active products
   async getActiveProducts() {
-    return this.productModel
-      .find({ is_active: true })
-      .select('name price sku stock description image_url category_name')
-      .lean();
-  }
-
-  // 🔹 Pagination
-  async getPaginatedProducts() {
 
     const products = await this.productModel
-      .find({ is_active: true })
+      .find({
+        is_active: true,
+        show_in_storefront: true,
+      })
+      .select('name price stock description image category_name show_in_storefront')
       .lean();
 
     const total = await this.productModel.countDocuments({
       is_active: true,
+      show_in_storefront: true,
     });
 
     return {
@@ -111,6 +108,7 @@ export class ProductsService {
 
     const filter: any = {
       is_active: true,
+      show_in_storefront: true,
     };
 
     if (category) {

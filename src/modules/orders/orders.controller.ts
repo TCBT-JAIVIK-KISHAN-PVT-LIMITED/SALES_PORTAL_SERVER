@@ -21,10 +21,16 @@ export class OrdersController {
   @Post()
   async createOrder(@Req() req: any, @Body() body: any) {
     const userId = req.user.userId;
-    if (!req.user?.userId) {
+
+    if (!userId) {
       throw new UnauthorizedException('User not authenticated');
     }
-    return this.ordersService.createOrderFromCart(userId, body.addressId);
+
+    return this.ordersService.createOrderFromCart(
+      userId,
+      body.addressId,
+      body.couponId,
+    );
   }
 
   @Get()
