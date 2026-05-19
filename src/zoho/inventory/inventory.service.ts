@@ -101,4 +101,60 @@ export class ZohoInventoryService {
 
     return response.salesorder?.salesorder_id;
   }
+
+  async findOrCreateSalesCustomer(customer: any) {
+    const searchText = encodeURIComponent(
+      customer.customerPhone || customer.mobile || customer.customerName,
+    );
+
+    if (searchText) {
+      const search = await this.http.request(
+        'GET',
+        `https://www.zohoapis.in/inventory/v1/contacts?organization_id=${this.getOrgId()}&search_text=${searchText}`,
+        'inventory',
+      );
+
+      const existing = search?.contacts?.find((contact: any) => {
+        const phone = String(customer.customerPhone || customer.mobile || '');
+        return (
+          contact.contact_id &&
+          (contact.phone === phone ||
+            contact.mobile === phone ||
+            contact.contact_name === customer.customerName)
+        );
+      });
+
+      if (existing?.contact_id) return existing.contact_id;
+    }
+
+    const payload = {
+      contact_name: customer.customerName || 'Sales Portal Customer',
+      contact_type: 'customer',
+      phone: customer.customerPhone || customer.mobile || '',
+      mobile: customer.customerPhone || customer.mobile || '',
+      billing_address: {
+        address: [customer.village, customer.district].filter(Boolean).join(', '),
+        city: customer.district || '',
+        state: customer.state || '',
+        zip: customer.pin || '',
+        phone: customer.customerPhone || customer.mobile || '',
+      },
+      shipping_address: {
+        address: [customer.village, customer.district].filter(Boolean).join(', '),
+        city: customer.district || '',
+        state: customer.state || '',
+        zip: customer.pin || '',
+        phone: customer.customerPhone || customer.mobile || '',
+      },
+    };
+
+    const response = await this.http.request(
+      'POST',
+      `https://www.zohoapis.in/inventory/v1/contacts?organization_id=${this.getOrgId()}`,
+      'inventory',
+      payload,
+    );
+
+    return response.contact?.contact_id;
+  }
 }

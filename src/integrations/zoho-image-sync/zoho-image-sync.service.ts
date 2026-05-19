@@ -173,6 +173,7 @@ export class ZohoImageSyncService {
 
       price: item.rate || 0,
       stock: item.actual_available_stock ?? item.stock_on_hand ?? 0,
+      unit: item.unit || item.unit_name || item.purchase_unit || '',
 
       category_id: item.category_id || '',
       category_name: item.category_name || '',

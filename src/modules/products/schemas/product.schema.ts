@@ -30,6 +30,9 @@ export class Product {
   stock!: number;
 
   @Prop()
+  unit!: string;
+
+  @Prop()
   weight!: number;
 
   @Prop()

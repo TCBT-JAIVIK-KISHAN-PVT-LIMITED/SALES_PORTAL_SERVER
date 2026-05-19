@@ -7,15 +7,25 @@ import {
   Salesperson,
   SalespersonSchema,
 } from '../models/salesperson.schema';
+import { Product, ProductSchema } from '../../products/schemas/product.schema';
+import { ZohoModule } from '../../../zoho/zoho.module';
+import {
+  SalesDocument,
+  SalesDocumentSchema,
+} from '../models/sales-document.schema';
+import { SalespersonGuard } from '../guards/salesperson.guard';
 import { SalesController } from './sales.controller';
 import { SalesAuthService } from '../salesAuth.service';
 
 @Module({
   imports: [
     ConfigModule,
+    ZohoModule,
     MongooseModule.forFeature([
       { name: SalesAdmin.name, schema: SalesAdminSchema },
       { name: Salesperson.name, schema: SalespersonSchema },
+      { name: Product.name, schema: ProductSchema },
+      { name: SalesDocument.name, schema: SalesDocumentSchema },
     ]),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -28,6 +38,6 @@ import { SalesAuthService } from '../salesAuth.service';
     }),
   ],
   controllers: [SalesController],
-  providers: [SalesAuthService],
+  providers: [SalesAuthService, SalespersonGuard],
 })
 export class SalesModule {}

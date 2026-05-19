@@ -166,7 +166,7 @@ export class ProductsService implements OnModuleInit {
         show_in_storefront: true,
       })
       .select(
-        'name price stock description image category_name sku weight weight_unit dimensions zoho_item_id show_in_storefront',
+        'name price stock unit description image category_name sku weight weight_unit dimensions zoho_item_id show_in_storefront',
       )
       .lean();
 
