@@ -37,7 +37,7 @@ export class SalesController {
   @UseGuards(SalespersonGuard)
   @Get('products')
   async getProductsForSalesperson() {
-    await this.refreshStockAndUnitsFromZoho();
+    await this.safeRefreshStockAndUnitsFromZoho();
 
     const products = await this.productModel
       .find({
@@ -58,7 +58,7 @@ export class SalesController {
   @UseGuards(SalespersonGuard)
   @Get('products/:id')
   async getProductForSalesperson(@Param('id') id: string) {
-    await this.refreshStockAndUnitsFromZoho();
+    await this.safeRefreshStockAndUnitsFromZoho();
 
     const query = isValidObjectId(id)
       ? { $or: [{ _id: id }, { zoho_item_id: id }] }
@@ -83,7 +83,7 @@ export class SalesController {
       body?.type === 'invoice' ? 'invoice' : 'quotation';
     const documentNumber = String(
       body?.documentNumber || body?.quoteNumber || '',
-    ).trim();
+    ).trim(); 
 
     if (!documentNumber) {
       throw new BadRequestException('Document number is required');
@@ -96,6 +96,10 @@ export class SalesController {
       quoteNumber: body?.quoteNumber || documentNumber,
       salesId: salesperson.login_id,
     };
+
+    if (Array.isArray(data.items)) {
+      delete data.items;
+    }
 
     const existingDocument: any = await this.salesDocumentModel.findOne({
       salesperson_id: salesperson.login_id,
@@ -182,6 +186,7 @@ export class SalesController {
     return {
       data: documents.map((document: any) => ({
         ...document.data,
+        items: document.items || document.data?.items || [],
         id: document._id,
         type: document.type,
         documentNumber: document.documentNumber,
@@ -215,6 +220,7 @@ export class SalesController {
     return result
       ? {
           ...result.data,
+          items: result.items || result.data?.items || [],
           id: result._id,
           type: result.type,
           documentNumber: result.documentNumber,
@@ -262,6 +268,14 @@ export class SalesController {
 
     if (operations.length > 0) {
       await this.productModel.bulkWrite(operations, { ordered: false });
+    }
+  }
+
+  private async safeRefreshStockAndUnitsFromZoho() {
+    try {
+      await this.refreshStockAndUnitsFromZoho();
+    } catch (error: any) {
+      console.warn('Zoho inventory refresh failed, falling back to local product data:', error?.message || error);
     }
   }
 

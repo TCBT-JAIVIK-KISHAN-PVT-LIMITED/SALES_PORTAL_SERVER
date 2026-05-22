@@ -42,6 +42,22 @@ export class SalesDocument {
   @Prop({ type: Object, required: true })
   data!: Record<string, any>;
 
+  // --- Online payment fields (Zoho payments) ---
+  @Prop({ default: 'unpaid' })
+  paymentStatus?: 'unpaid' | 'paid' | 'failed';
+
+  @Prop({ default: '' })
+  paymentMethod?: 'online' | string;
+
+  @Prop()
+  paymentDate?: string;
+
+  @Prop()
+  transactionId?: string;
+
+  @Prop()
+  onlinePaymentSessionId?: string;
+
   @Prop()
   zohoSalesOrderId?: string;
 

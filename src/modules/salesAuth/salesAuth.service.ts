@@ -54,9 +54,32 @@ export class SalesAuthService implements OnModuleInit {
     });
 
     if (existingAdmin) {
-      console.log('[DEBUG] Admin already exists, skipping seed', {
+      const passwordMatches = existingAdmin.password_hash
+        ? await bcrypt.compare(password, existingAdmin.password_hash)
+        : false;
+
+      if (existingAdmin.admin_id === adminId && passwordMatches) {
+        console.log('[DEBUG] Admin already exists with matching env credentials, skipping seed', {
+          admin_id: existingAdmin.admin_id,
+        });
+        return;
+      }
+
+      console.log('[DEBUG] Admin exists, updating admin credentials from env', {
+        old_admin_id: existingAdmin.admin_id,
+        new_admin_id: adminId,
+      });
+
+      existingAdmin.admin_id = adminId;
+      existingAdmin.password_hash = await bcrypt.hash(password, 10);
+      existingAdmin.name = this.configService.get<string>('SALES_ADMIN_NAME') ?? existingAdmin.name;
+      existingAdmin.email = this.configService.get<string>('SALES_ADMIN_EMAIL') ?? existingAdmin.email;
+      existingAdmin.is_active = true;
+      await existingAdmin.save();
+
+      console.log('[DEBUG] Admin record updated from env', {
         admin_id: existingAdmin.admin_id,
-        password_hash_exists: !!existingAdmin.password_hash,
+        password_hash_length: existingAdmin.password_hash?.length,
       });
       return;
     }

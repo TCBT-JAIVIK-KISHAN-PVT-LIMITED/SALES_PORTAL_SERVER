@@ -16,6 +16,7 @@ import {
 import { SalespersonGuard } from '../guards/salesperson.guard';
 import { SalesController } from './sales.controller';
 import { SalesAuthService } from '../salesAuth.service';
+import { SalesDocumentPaymentsModule } from './payment/sales-document-payments.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { SalesAuthService } from '../salesAuth.service';
         },
       }),
     }),
+    SalesDocumentPaymentsModule,
   ],
   controllers: [SalesController],
   providers: [SalesAuthService, SalespersonGuard],
