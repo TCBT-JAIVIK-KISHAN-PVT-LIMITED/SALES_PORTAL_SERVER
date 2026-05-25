@@ -12,6 +12,7 @@ import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { SalesAdmin } from './models/sales-admin.schema';
 import { Salesperson } from './models/salesperson.schema';
+import { SalesDocument } from './models/sales-document.schema';
 import { SalesAdminLoginDto } from './dto/sales-admin-login.dto';
 import { CreateSalespersonDto } from './dto/create-salesperson.dto';
 import { SalespersonLoginDto } from './dto/salesperson-login.dto';
@@ -27,6 +28,8 @@ export class SalesAuthService implements OnModuleInit {
     private salesAdminModel: Model<SalesAdmin>,
     @InjectModel(Salesperson.name)
     private salespersonModel: Model<Salesperson>,
+    @InjectModel(SalesDocument.name)
+    private salesDocumentModel: Model<SalesDocument>,
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {}
@@ -252,9 +255,14 @@ export class SalesAuthService implements OnModuleInit {
       throw new NotFoundException('Salesperson not found');
     }
 
-    return {
-      message: 'Salesperson deleted successfully',
+    const deletedDocuments = await this.salesDocumentModel.deleteMany({
       salesperson_id: deleted.salesperson_id,
+    });
+
+    return {
+      message: 'Salesperson and related orders deleted successfully',
+      salesperson_id: deleted.salesperson_id,
+      deleted_orders: deletedDocuments.deletedCount || 0,
     };
   }
 

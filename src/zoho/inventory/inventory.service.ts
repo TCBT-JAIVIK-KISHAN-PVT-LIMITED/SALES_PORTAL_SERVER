@@ -15,6 +15,11 @@ export class ZohoInventoryService {
     return this.config.get<string>('ZOHO_ORG_ID') || '';
   }
 
+  private limitAddress(value: any) {
+    const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+    return normalized.length > 99 ? normalized.slice(0, 99) : normalized;
+  }
+
   async getItems(page = 1, perPage = 200): Promise<any> {
     return this.http.request(
       'GET',
@@ -76,7 +81,9 @@ export class ZohoInventoryService {
       shipping_charge: order.shippingCharge,
 
       billing_address: {
-        address: order.address.addressLine,
+        address: this.limitAddress(
+          order.address.billingAddress || order.address.addressLine,
+        ),
         city: order.address.city,
         state: order.address.state,
         zip: order.address.pincode,
@@ -84,7 +91,9 @@ export class ZohoInventoryService {
       },
 
       shipping_address: {
-        address: order.address.addressLine,
+        address: this.limitAddress(
+          order.address.billingAddress || order.address.addressLine,
+        ),
         city: order.address.city,
         state: order.address.state,
         zip: order.address.pincode,
@@ -133,14 +142,20 @@ export class ZohoInventoryService {
       phone: customer.customerPhone || customer.mobile || '',
       mobile: customer.customerPhone || customer.mobile || '',
       billing_address: {
-        address: [customer.village, customer.district].filter(Boolean).join(', '),
+        address: this.limitAddress(
+          customer.billingAddress ||
+            [customer.village, customer.district].filter(Boolean).join(', '),
+        ),
         city: customer.district || '',
         state: customer.state || '',
         zip: customer.pin || '',
         phone: customer.customerPhone || customer.mobile || '',
       },
       shipping_address: {
-        address: [customer.village, customer.district].filter(Boolean).join(', '),
+        address: this.limitAddress(
+          customer.billingAddress ||
+            [customer.village, customer.district].filter(Boolean).join(', '),
+        ),
         city: customer.district || '',
         state: customer.state || '',
         zip: customer.pin || '',

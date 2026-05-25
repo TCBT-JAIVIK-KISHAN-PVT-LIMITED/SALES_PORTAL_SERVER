@@ -4,9 +4,11 @@ import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import { SalesAdmin, SalesAdminSchema } from './models/sales-admin.schema';
 import { Salesperson, SalespersonSchema } from './models/salesperson.schema';
+import { SalesDocument, SalesDocumentSchema } from './models/sales-document.schema';
 import { SalesAuthService } from './salesAuth.service';
 import { SalesAdminModule } from './admin/admin.module';
 import { SalesModule } from './salesperson/sales.module';
+import { OrdersModule as SalesOrdersModule } from './salesOrders/orders.module';
 
 @Module({
   imports: [
@@ -14,6 +16,7 @@ import { SalesModule } from './salesperson/sales.module';
     MongooseModule.forFeature([
       { name: SalesAdmin.name, schema: SalesAdminSchema },
       { name: Salesperson.name, schema: SalespersonSchema },
+      { name: SalesDocument.name, schema: SalesDocumentSchema },
     ]),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -26,8 +29,9 @@ import { SalesModule } from './salesperson/sales.module';
     }),
     SalesAdminModule,
     SalesModule,
+    SalesOrdersModule,
   ],
   providers: [SalesAuthService],
-  exports: [SalesAuthService, SalesAdminModule, SalesModule],
+  exports: [SalesAuthService, SalesAdminModule, SalesModule, SalesOrdersModule],
 })
 export class SalesAuthModule {}

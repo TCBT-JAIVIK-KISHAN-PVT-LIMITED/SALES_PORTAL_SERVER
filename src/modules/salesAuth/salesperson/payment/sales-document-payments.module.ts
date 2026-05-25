@@ -12,6 +12,7 @@ import { SalesPaymentLinksController } from './sales-payment-links.controller';
 import { SalesPaymentWebhookController } from './sales-payment-webhook.controller';
 import { SalesDocumentPaymentsService } from '../payment/sales-document-payments.service';
 import { SalespersonGuard } from '../../guards/salesperson.guard';
+import { OrdersModule as SalesOrdersModule } from '../../salesOrders/orders.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { SalespersonGuard } from '../../guards/salesperson.guard';
       { name: SalesDocument.name, schema: SalesDocumentSchema },
     ]),
     PaymentsModule,
+    SalesOrdersModule,
   ],
   controllers: [SalesDocumentPaymentsController, SalesPaymentLinksController, SalesPaymentWebhookController],
   providers: [SalesDocumentPaymentsService, SalespersonGuard],

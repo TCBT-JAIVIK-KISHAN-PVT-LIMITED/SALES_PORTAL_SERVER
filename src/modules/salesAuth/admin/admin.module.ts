@@ -9,6 +9,7 @@ import {
   Salesperson,
   SalespersonSchema,
 } from '../models/salesperson.schema';
+import { SalesDocument, SalesDocumentSchema } from '../models/sales-document.schema';
 import { SalesAuthService } from '../salesAuth.service';
 
 @Module({
@@ -17,6 +18,7 @@ import { SalesAuthService } from '../salesAuth.service';
     MongooseModule.forFeature([
       { name: SalesAdmin.name, schema: SalesAdminSchema },
       { name: Salesperson.name, schema: SalespersonSchema },
+      { name: SalesDocument.name, schema: SalesDocumentSchema },
     ]),
     JwtModule.registerAsync({
       inject: [ConfigService],

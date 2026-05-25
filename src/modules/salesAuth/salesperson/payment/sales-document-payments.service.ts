@@ -14,6 +14,7 @@ import {
 } from '../../models/sales-document.schema';
 import { ZohoPaymentGatewayService } from '../../../../integrations/payments/zoho-payment-gateway.service';
 import { ZohoPaymentLinksService } from '../../../../integrations/payments/zoho-payment-links.service';
+import { OrdersService } from '../../salesOrders/orders.service';
 
 @Injectable()
 export class SalesDocumentPaymentsService {
@@ -23,6 +24,7 @@ export class SalesDocumentPaymentsService {
     private readonly zohoPaymentGateway: ZohoPaymentGatewayService,
     private readonly zohoPaymentLinksService: ZohoPaymentLinksService,
     private readonly configService: ConfigService,
+    private readonly salesOrdersService: OrdersService,
   ) {}
 
   private verifySignature(rawBody: Buffer, signature: string, secret: string) {
@@ -31,6 +33,10 @@ export class SalesDocumentPaymentsService {
       .createHmac('sha256', secret)
       .update(rawBody)
       .digest('base64');
+
+    if (Buffer.byteLength(expectedHash) !== Buffer.byteLength(signature)) {
+      return false;
+    }
 
     return crypto.timingSafeEqual(
       Buffer.from(expectedHash),
@@ -250,7 +256,10 @@ export class SalesDocumentPaymentsService {
     const payment = payload.event_object?.payment;
     const paymentId = payment?.payment_id;
     const amount = payment?.amount;
-    const referenceNumber = payment?.reference_number;
+    const referenceNumber =
+      payment?.reference_number ||
+      payment?.reference_id ||
+      payload.event_object?.payment_link?.reference_id;
 
     if (!referenceNumber) return { received: true };
 
@@ -272,10 +281,20 @@ export class SalesDocumentPaymentsService {
         },
       );
 
+      doc.paymentStatus = 'paid';
+      doc.paymentMethod = 'online';
+      doc.paymentDate = new Date().toISOString().split('T')[0];
+      doc.transactionId = paymentId;
+
       // Convert quotation->invoice ONLY after payment success.
       if (doc.type === 'quotation') {
         await this.convertQuotationToInvoiceAfterPaid({
           quotationDoc: doc,
+        });
+        await this.salesOrdersService.createOrUpdatePaidOrderFromQuotation({
+          quotation: doc,
+          paymentId,
+          amount: Number(amount || doc.grandTotal || 0),
         });
       }
     }
@@ -361,10 +380,39 @@ export class SalesDocumentPaymentsService {
       .findOne({
         salesperson_id: params.salespersonId,
         documentNumber: params.documentNumber,
-      })
-      .lean();
+      });
 
     if (!doc) throw new BadRequestException('Sales document not found');
+
+    if (
+      doc.type === 'quotation' &&
+      doc.paymentStatus !== 'paid' &&
+      doc.onlinePaymentSessionId
+    ) {
+      const result = await this.zohoPaymentGateway.verifyPaymentSessionStatus(
+        doc.onlinePaymentSessionId,
+      );
+
+      if (result.status === 'succeeded' && result.paymentId && result.amount) {
+        doc.paymentStatus = 'paid';
+        doc.paymentMethod = 'online';
+        doc.paymentDate = new Date().toISOString().split('T')[0];
+        doc.transactionId = result.paymentId;
+        await doc.save();
+
+        await this.convertQuotationToInvoiceAfterPaid({ quotationDoc: doc });
+        await this.salesOrdersService.createOrUpdatePaidOrderFromQuotation({
+          quotation: doc,
+          paymentId: result.paymentId,
+          amount: Number(result.amount),
+        });
+      } else if (result.status === 'failed') {
+        doc.paymentStatus = 'failed';
+        doc.paymentMethod = 'online';
+        await doc.save();
+      }
+    }
+
     return {
       paymentStatus: doc.paymentStatus || 'unpaid',
       paymentMethod: doc.paymentMethod || '',

@@ -332,7 +332,18 @@ export class SalesController {
         })),
         shippingCharge: 0,
         address: {
-          addressLine: [invoice.village, invoice.district].filter(Boolean).join(', '),
+          addressLine: this.limitZohoAddress(
+            invoice.billingAddress ||
+              invoice.addressLine ||
+              invoice.village ||
+              '',
+          ),
+          billingAddress: this.limitZohoAddress(
+            invoice.billingAddress ||
+              invoice.addressLine ||
+              invoice.village ||
+              '',
+          ),
           city: invoice.district || '',
           state: invoice.state || '',
           pincode: invoice.pin || '',
@@ -382,5 +393,10 @@ export class SalesController {
       item.package_details?.weight_unit ||
       ''
     );
+  }
+
+  private limitZohoAddress(value: any) {
+    const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+    return normalized.length > 99 ? normalized.slice(0, 99) : normalized;
   }
 }

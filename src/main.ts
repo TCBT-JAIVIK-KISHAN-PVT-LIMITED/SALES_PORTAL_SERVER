@@ -24,8 +24,10 @@ async function bootstrap() {
 
   // 🌍 CORS
   app.enableCors({
-    origin: '*', // restrict later
+    origin: true,
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
     const config = new DocumentBuilder()
@@ -46,7 +48,9 @@ async function bootstrap() {
   // ✅ Normal JSON parser for all other routes
   app.use(bodyParser.json());
 
-  await app.listen(3000);
+  const port = Number(process.env.BACKEND_PORT ?? 3002);
+  console.log(`[Nest] Starting on port ${port}`);
+  await app.listen(port);
 }
 
 bootstrap();
