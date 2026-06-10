@@ -30,22 +30,21 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
-    const config = new DocumentBuilder()
+  const config = new DocumentBuilder()
     .setTitle('My API')
     .setDescription('Interactive API documentation')
     .setVersion('1.0')
-    .addBearerAuth() // if using JWT
+    .addBearerAuth()
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-
   SwaggerModule.setup('api-docs', app, document);
 
-
-  // 🔥 CRITICAL: RAW BODY for Zoho webhook ONLY
+  // 🔥 CRITICAL: RAW BODY for Zoho webhooks ONLY
   app.use('/payments/webhook', bodyParser.raw({ type: '*/*' }));
   app.use('/payments/webhook-sales-doc', bodyParser.raw({ type: '*/*' }));
   app.use('/sales-auth/salesperson/payments/webhook-sales-doc', bodyParser.raw({ type: '*/*' }));
+  app.use('/sales-auth/salesperson/sales-orders/payments/webhook', bodyParser.raw({ type: '*/*' }));
 
   // ✅ Normal JSON parser for all other routes
   app.use(bodyParser.json());

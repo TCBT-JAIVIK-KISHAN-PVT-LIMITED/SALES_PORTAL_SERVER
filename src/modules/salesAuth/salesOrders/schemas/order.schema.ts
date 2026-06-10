@@ -94,6 +94,12 @@ export class SalesOrder {
   @Prop()
   zohoSalesOrderId?: string;
 
+  @Prop()
+  zohoInvoiceId?: string;
+
+  @Prop()
+  zohoInvoiceUrl?: string;
+
   @Prop({ default: false })
   isSyncedToZoho?: boolean;
 

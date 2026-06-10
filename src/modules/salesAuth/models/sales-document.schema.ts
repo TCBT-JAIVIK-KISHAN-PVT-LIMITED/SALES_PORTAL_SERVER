@@ -64,6 +64,9 @@ export class SalesDocument {
   @Prop()
   onlinePaymentSessionId?: string;
 
+  @Prop()
+  onlinePaymentLinkId?: string;
+
   @Prop({ index: true, sparse: true })
   quotationPublicId?: string;
 
@@ -75,6 +78,12 @@ export class SalesDocument {
 
   @Prop()
   zohoSalesOrderId?: string;
+
+  @Prop()
+  zohoInvoiceId?: string;
+
+  @Prop()
+  zohoInvoiceUrl?: string;
 
   @Prop({ default: false })
   isSyncedToZoho?: boolean;

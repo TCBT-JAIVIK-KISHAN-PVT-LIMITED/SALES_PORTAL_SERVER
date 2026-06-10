@@ -51,6 +51,7 @@ export class OrdersService {
         quantity: item.quantity,
         weight: item.weight,
         image: item.image,
+        zohoItemId: item.zohoItemId || item.zoho_item_id,
       };
     });
 
@@ -247,52 +248,141 @@ export class OrdersService {
   }
 
   async handlePaymentSuccess(orderId: string, paymentId: string, amount: number) {
+    console.log('\n----- [RegularOrder] handlePaymentSuccess START -----');
+    console.log('[RegularOrder] orderId:', orderId, '| paymentId:', paymentId, '| amount:', amount);
+
     const order = await this.orderModel.findOne({ orderId });
+    console.log('[RegularOrder] DB lookup result:', order ? `found (userId: ${order.userId}, finalAmount: ${order.finalAmount})` : '❌ NOT FOUND in orders collection');
 
     if (!order) throw new Error('Order not found');
 
-    if (order.paymentStatus === 'paid') return;
+    if (order.paymentStatus === 'paid') {
+      console.log('[RegularOrder] Already paid — skipping');
+      return;
+    }
 
-    if (Math.abs(order.finalAmount - Number(amount)) > 0.01) {
+    const diff = Math.abs(order.finalAmount - Number(amount));
+    console.log('[RegularOrder] Amount check — order.finalAmount:', order.finalAmount, '| incoming amount:', amount, '| diff:', diff);
+    if (diff > 0.01) {
+      console.error('[RegularOrder] ❌ Amount mismatch!');
       throw new Error('Amount mismatch');
     }
 
     order.paymentStatus = 'paid';
     order.orderStatus = 'confirmed';
     order.paymentId = paymentId;
-
     await order.save();
+    console.log('[RegularOrder] ✅ Order marked as paid & saved');
 
-    await this.cartService.getOrCreateForUser(order.userId).then(c => {
-      c.items = [];
-      return c.save();
-    });
+    try {
+      await this.cartService.getOrCreateForUser(order.userId).then(c => {
+        c.items = [];
+        return c.save();
+      });
+      console.log('[RegularOrder] ✅ Cart cleared for userId:', order.userId);
+    } catch (cartErr: any) {
+      console.warn('[RegularOrder] ⚠️ Cart clear failed (non-critical):', cartErr?.message);
+    }
 
+    console.log('[RegularOrder] Looking up user by userId:', order.userId);
     const user = await this.userModel.findById(order.userId);
+    console.log('[RegularOrder] User lookup:', user ? `found (name: ${user.name}, zoho_contact_id: ${user.zoho_contact_id || '❌ MISSING'})` : '❌ NOT FOUND');
 
-    if (!user?.zoho_contact_id) {
-      order.zohoSyncError = 'Missing zoho_contact_id';
+    if (!user) {
+      order.zohoSyncError = 'User not found';
       await order.save();
+      console.error('[RegularOrder] ❌ Aborting — user not found for userId:', order.userId);
       return;
     }
 
+    // ── Step 1: Auto-create Zoho contact if missing ──
+    let zohoContactId = user.zoho_contact_id;
+    console.log('[RegularOrder] Step 1 — zohoContactId from user:', zohoContactId || '❌ MISSING — will create');
+
+    if (!zohoContactId) {
+      try {
+        console.log('[RegularOrder] Calling createOrGetContact with:', { name: user?.name, mobile_number: user?.mobile_number, email: user?.email });
+        zohoContactId = await this.zohoInventoryService.createOrGetContact({
+          name: user?.name,
+          mobile_number: user?.mobile_number,
+          email: user?.email,
+        });
+        console.log('[RegularOrder] ✅ Got zohoContactId:', zohoContactId);
+
+        await this.userModel.findByIdAndUpdate(order.userId, { zoho_contact_id: zohoContactId });
+        console.log('[RegularOrder] ✅ Saved zoho_contact_id to user');
+      } catch (err: any) {
+        console.error('[RegularOrder] ❌ createOrGetContact FAILED:', err.message);
+        order.zohoSyncError = `Contact creation failed: ${err.message}`;
+        await order.save();
+        return;
+      }
+    }
+
+    // ── Step 2: Full Zoho sync ──
+    console.log('[RegularOrder] Step 2 — Starting Zoho sync. zohoContactId:', zohoContactId);
+    console.log('[RegularOrder] Items to sync:', order.items?.map((i: any) => ({ name: i.name, zohoItemId: i.zohoItemId || '❌ MISSING', qty: i.quantity, price: i.price })));
+
     try {
-      const zohoOrderId = await this.zohoInventoryService.createSalesOrder(
-        order,
-        user.zoho_contact_id,
-      );
+      const zohoOrderId = await this.zohoInventoryService.createSalesOrder(order, zohoContactId);
+      console.log('[RegularOrder] ✅ Step 2a — Sales Order created:', zohoOrderId);
 
       order.zohoSalesOrderId = zohoOrderId;
       order.isSyncedToZoho = true;
       order.orderStatus = 'processing';
-
       await order.save();
-    } catch (error: any) {
-      console.error('Zoho Sync Failed:', error);
 
+      let zohoInvoiceId: string | null = null;
+      let zohoInvoiceUrl: string | null = null;
+
+      try {
+        console.log('[RegularOrder] Step 2b — Creating invoice from SO:', zohoOrderId);
+        const zohoInvoice = await this.zohoInventoryService.createInvoiceForPaidOrder(order, zohoContactId, zohoOrderId);
+        console.log('[RegularOrder] createInvoiceForPaidOrder response:', JSON.stringify(zohoInvoice));
+        const invoiceId = zohoInvoice?.invoice_id;
+
+        if (invoiceId) {
+          zohoInvoiceId = invoiceId;
+          console.log('[RegularOrder] ✅ Invoice ID:', invoiceId);
+
+          const sentInvoice = await this.zohoInventoryService.markInvoiceAsSent(invoiceId);
+          zohoInvoiceUrl = sentInvoice?.invoice_url || zohoInvoice?.invoice_url || '';
+          console.log('[RegularOrder] ✅ Step 2c — Invoice marked as sent. URL:', zohoInvoiceUrl);
+
+          try {
+            console.log('[RegularOrder] Step 2d — Recording payment. amount:', order.finalAmount, 'paymentId:', order.paymentId);
+            const zohoPayment = await this.zohoInventoryService.recordCustomerPaymentForInvoice({
+              customerId: zohoContactId,
+              invoiceId,
+              amount: Number(order.finalAmount || 0),
+              paymentId: order.paymentId,
+            });
+            console.log('[RegularOrder] ✅ Zoho payment recorded:', zohoPayment?.payment_id);
+          } catch (payErr: any) {
+            console.error('[RegularOrder] ❌ recordCustomerPaymentForInvoice FAILED:', payErr.message);
+          }
+        } else {
+          console.warn('[RegularOrder] ⚠️ No invoice_id in response — invoice may not have been created');
+        }
+      } catch (invoiceErr: any) {
+        console.error('[RegularOrder] ❌ createInvoiceForPaidOrder FAILED:', invoiceErr.message);
+      }
+
+      if (zohoInvoiceId) {
+        order.zohoInvoiceId = zohoInvoiceId || undefined;
+        order.zohoInvoiceUrl = zohoInvoiceUrl || undefined;
+        await order.save();
+        console.log('[RegularOrder] ✅ Invoice info saved to order');
+      }
+
+      console.log(`[RegularOrder] ✅ FULL SYNC COMPLETE — SO: ${zohoOrderId}, Invoice: ${zohoInvoiceId}`);
+    } catch (error: any) {
+      console.error('[RegularOrder] ❌ Zoho sync FAILED:', error.message);
+      console.error('[RegularOrder] Stack:', error.stack);
       order.zohoSyncError = error.message;
       await order.save();
     }
+    console.log('----- [RegularOrder] handlePaymentSuccess END -----\n');
   }
 
   async verifyAndConfirmOrder(orderId: string): Promise<any> {

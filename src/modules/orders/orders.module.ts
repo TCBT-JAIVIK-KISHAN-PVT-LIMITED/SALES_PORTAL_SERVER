@@ -14,6 +14,7 @@ import { ShippingModule } from '../../integrations/shipping/shipping.module';
 import { SmsService } from './sms.service';
 import { CommunicationService } from './communication.service';
 import { CouponModule } from '../coupon/coupon.module';
+import { SalesDocumentPaymentsModule } from '../salesAuth/salesperson/payment/sales-document-payments.module';
 
 @Module({
   imports: [
@@ -26,7 +27,8 @@ import { CouponModule } from '../coupon/coupon.module';
     PaymentsModule,
     CartModule,
     ShippingModule,
-    CouponModule
+    CouponModule,
+    SalesDocumentPaymentsModule,
   ],
   controllers: [OrdersController, PaymentsController],
   providers: [OrdersService, SmsService, CommunicationService],

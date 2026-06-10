@@ -18,6 +18,7 @@ export class OrdersService {
   constructor(
     private zohoInventoryService: ZohoInventoryService,
     @InjectModel(Order.name) private orderModel: Model<Order>,
+    @InjectModel(SalesDocument.name) private readonly salesDocumentModel: Model<SalesDocument>,
     private appApi: AppApiService,
     private paymentService: ZohoPaymentGatewayService,
     private shippingService: ShippingService,
@@ -117,9 +118,34 @@ export class OrdersService {
       data.relatedInvoiceNumber ||
       quotationNumber.replace('QT-', 'INV-');
     const orderId = `SO-${quotationNumber}`;
-    const normalizedItems = this.normalizeQuotationItems(
-      quotation.items?.length ? quotation.items : data.items || [],
+
+    console.log('[SalesOrderSync] Starting createOrUpdatePaidOrderFromQuotation:', {
+      quotationNumber,
+      paymentId,
+      amount,
+      rawItemCount: quotation.items?.length || 0,
+      dataItemCount: data.items?.length || 0,
+    });
+
+    const rawItems = quotation.items?.length ? quotation.items : data.items || [];
+    const normalizedItems = await this.normalizeQuotationItems(rawItems);
+
+    // 🔥 Log item zohoItemId mapping — this is critical for Zoho sync
+    console.log('[SalesOrderSync] Normalized items zohoItemId mapping:',
+      normalizedItems.map((item: any) => ({
+        name: item.name,
+        zohoItemId: item.zohoItemId || '❌ MISSING',
+        productId: item.productId,
+      })),
     );
+
+    const missingZohoItems = normalizedItems.filter((item: any) => !item.zohoItemId);
+    if (missingZohoItems.length > 0) {
+      console.warn('[SalesOrderSync] ⚠️ Items missing zohoItemId:',
+        missingZohoItems.map((i: any) => i.name),
+      );
+    }
+
     const address = this.normalizeAddress({
       name: quotation.customerName || data.customerName,
       phone: quotation.customerPhone || data.customerPhone || data.mobile,
@@ -169,16 +195,16 @@ export class OrdersService {
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
 
-    console.log(
-      'SALES_ORDER_CREATED_OR_UPDATED_IN_MONGO:',
-      JSON.stringify(
-        typeof order.toObject === 'function' ? order.toObject() : order,
-        null,
-        2,
-      ),
-    );
+    console.log('[SalesOrderSync] Order saved in MongoDB:', {
+      orderId: order.orderId,
+      quotationNumber: order.quotationNumber,
+      paymentStatus: order.paymentStatus,
+      isSyncedToZoho: order.isSyncedToZoho,
+      itemCount: order.items?.length,
+    });
 
     if (order.isSyncedToZoho) {
+      console.log('[SalesOrderSync] Already synced to Zoho — skipping');
       this.logSavedOrderDetails(order);
       return order;
     }
@@ -515,45 +541,140 @@ export class OrdersService {
     return normalized.length > 99 ? normalized.slice(0, 99) : normalized;
   }
 
-  private normalizeQuotationItems(items: any[]) {
-    return items.map((item: any) => {
+  private async normalizeQuotationItems(items: any[]) {
+    return Promise.all(items.map(async (item: any) => {
+      const product = await this.findProductForQuotationItem(item);
       const quantity = Number(item.quantity || item.qty || 0);
-      const price = Number(item.price || item.rate || item.amount || 0);
+      const price = Number(item.price || item.rate || item.amount || product?.price || 0);
+
+      // 🔥 Robust zohoItemId extraction — the frontend cart stores zoho_item_id
+      // as the `id` field in many cases (set from p.zoho_item_id in products page)
+      const zohoItemId =
+        item.zohoItemId ||
+        item.zoho_item_id ||
+        item.raw?.zoho_item_id ||
+        item.item_id ||
+        product?.zoho_item_id ||
+        (this.looksLikeZohoItemId(item.id) ? item.id : '') ||
+        '';
 
       return {
-        productId: item.productId || item.product_id || item.id || '',
-        name: item.name || item.productName || '',
+        productId: product?._id || item.productId || item.product_id || item.id || '',
+        name: product?.name || item.name || item.productName || '',
         price,
         quantity,
-        weight: Number(item.weight || 0),
-        image: item.image || item.image_url,
-        sku: item.sku,
-        zohoItemId:
-          item.zohoItemId ||
-          item.zoho_item_id ||
-          item.raw?.zoho_item_id ||
-          item.item_id,
+        weight: Number(item.weight || product?.weight || 0),
+        image: item.image || item.image_url || product?.image?.image_url,
+        sku: item.sku || product?.sku,
+        zohoItemId,
       };
-    });
+    }));
+  }
+
+  private async findProductForQuotationItem(item: any): Promise<any | null> {
+    const lookupIds = [
+      item.zohoItemId,
+      item.zoho_item_id,
+      item.raw?.zoho_item_id,
+      item.item_id,
+      item.productId,
+      item.product_id,
+      item.id,
+    ].filter(Boolean);
+
+    for (const lookupId of lookupIds) {
+      try {
+        const product = await this.appApi.getProductById(String(lookupId));
+        if (product) return product;
+      } catch (error: any) {
+        console.warn('[SalesOrderSync] Product lookup failed:', {
+          lookupId,
+          itemName: item.name || item.productName,
+          message: error?.message,
+        });
+      }
+    }
+
+    return null;
+  }
+
+  private looksLikeZohoItemId(value: any) {
+    return /^[0-9]{10,}$/.test(String(value || ''));
   }
 
   private async syncPaidSalesOrderToZoho(order: any) {
-    const customerId = await this.zohoInventoryService.findOrCreateSalesCustomer(
-      this.toSalesCustomer(order),
-    );
+    console.log('[SalesOrderSync] 🚀 Starting Zoho sync for order:', {
+      orderId: order.orderId,
+      quotationNumber: order.quotationNumber,
+      customerName: order.customerName,
+      customerPhone: order.customerPhone,
+      finalAmount: order.finalAmount,
+      itemCount: order.items?.length,
+    });
+
+    const customerPayload = this.toSalesCustomer(order);
+    console.log('[SalesOrderSync] Step 1: Finding/creating Zoho customer:', customerPayload);
+
+    let customerId: string | null = null;
+    try {
+      customerId = await this.zohoInventoryService.findOrCreateSalesCustomer(
+        customerPayload,
+      );
+    } catch (err: any) {
+      console.error('[SalesOrderSync] ❌ findOrCreateSalesCustomer FAILED:', err?.message || err);
+    }
 
     if (!customerId) {
-      order.zohoSyncError = 'Unable to create/find Zoho customer';
+      const errorMsg = 'Unable to create/find Zoho customer';
+      console.error('[SalesOrderSync] ❌', errorMsg);
+      order.zohoSyncError = errorMsg;
       await order.save();
       this.logSavedOrderDetails(order);
+
+      const docNumbers = [order.quotationNumber, order.invoiceNumber].filter(Boolean);
+      if (docNumbers.length > 0) {
+        await this.salesDocumentModel.updateMany(
+          {
+            salesperson_id: order.salesId,
+            documentNumber: { $in: docNumbers },
+          },
+          {
+            $set: {
+              zohoSyncError: errorMsg,
+              'data.zohoSyncError': errorMsg,
+            },
+          },
+        );
+      }
       return;
     }
 
+    console.log('[SalesOrderSync] ✅ Zoho customer ID:', customerId);
+
     try {
+      console.log('[SalesOrderSync] Step 2: Creating Zoho Sales Order with items:',
+        order.items?.map((i: any) => ({
+          name: i.name,
+          zohoItemId: i.zohoItemId || '❌ MISSING',
+          price: i.price,
+          quantity: i.quantity,
+        })),
+      );
+
+      // Look up the Zoho salesperson ID by name (required by Zoho when salespersons are enabled)
+      let salespersonId: string | null = null;
+      if (order.salesName) {
+        salespersonId = await this.zohoInventoryService.findSalespersonId(order.salesName);
+        console.log('[SalesOrderSync] Zoho salesperson lookup:', { name: order.salesName, id: salespersonId || '❌ NOT FOUND' });
+      }
+
       const zohoOrderId = await this.zohoInventoryService.createSalesOrder(
         order,
         customerId,
+        salespersonId || undefined,
       );
+
+      console.log('[SalesOrderSync] ✅ Zoho Sales Order created:', zohoOrderId);
 
       order.zohoSalesOrderId = zohoOrderId;
       order.isSyncedToZoho = true;
@@ -561,12 +682,107 @@ export class OrdersService {
 
       await order.save();
       this.logSavedOrderDetails(order);
+
+      let zohoInvoiceId: string | null = null;
+      let zohoInvoiceUrl: string | null = null;
+
+      try {
+        console.log('[SalesOrderSync] Step 3: Creating Zoho Invoice from Sales Order:', zohoOrderId);
+        const zohoInvoice = await this.zohoInventoryService.createInvoiceForPaidOrder(
+          order,
+          customerId,
+          zohoOrderId,
+        );
+        const invoiceId = zohoInvoice?.invoice_id;
+        if (invoiceId) {
+          zohoInvoiceId = invoiceId;
+          const sentInvoice = await this.zohoInventoryService.markInvoiceAsSent(invoiceId);
+          zohoInvoiceUrl = sentInvoice?.invoice_url || zohoInvoice?.invoice_url || '';
+          try {
+            const zohoPayment = await this.zohoInventoryService.recordCustomerPaymentForInvoice({
+              customerId,
+              invoiceId,
+              amount: Number(order.finalAmount || 0),
+              paymentId: order.paymentId,
+              paymentDate: order.paymentDate,
+            });
+            console.log('[SalesOrderSync] Zoho Customer Payment recorded:', zohoPayment?.payment_id);
+          } catch (paymentErr: any) {
+            console.error('[SalesOrderSync] Failed to record Zoho Customer Payment:', paymentErr?.message || paymentErr);
+          }
+          console.log('[SalesOrderSync] ✅ Zoho Invoice created & sent:', { zohoInvoiceId, zohoInvoiceUrl });
+        }
+      } catch (invoiceErr: any) {
+        console.error('[SalesOrderSync] ⚠️ Failed to create/send Zoho Invoice:', invoiceErr?.message || invoiceErr);
+      }
+
+      if (zohoInvoiceId) {
+        order.zohoInvoiceId = zohoInvoiceId;
+        order.zohoInvoiceUrl = zohoInvoiceUrl;
+        await order.save();
+      }
+
+      const docNumbers = [order.quotationNumber, order.invoiceNumber].filter(Boolean);
+      if (docNumbers.length > 0) {
+        await this.salesDocumentModel.updateMany(
+          {
+            salesperson_id: order.salesId,
+            documentNumber: { $in: docNumbers },
+          },
+          {
+            $set: {
+              isSyncedToZoho: true,
+              zohoSalesOrderId: zohoOrderId,
+              zohoInvoiceId: zohoInvoiceId || undefined,
+              zohoInvoiceUrl: zohoInvoiceUrl || undefined,
+              zohoSyncError: null,
+              'data.isSyncedToZoho': true,
+              'data.zohoSalesOrderId': zohoOrderId,
+              'data.zohoInvoiceId': zohoInvoiceId || undefined,
+              'data.zohoInvoiceUrl': zohoInvoiceUrl || undefined,
+              'data.zohoSyncError': null,
+            },
+          },
+        );
+      }
+
+      console.log('[SalesOrderSync] ✅ Full Zoho sync completed for:', order.orderId);
+
+      if (zohoInvoiceUrl && order.customerPhone) {
+        await this.communicationService.sendInvoiceNotification({
+          customerPhone: order.customerPhone,
+          customerName: order.customerName || 'Valued Customer',
+          invoiceNumber: order.invoiceNumber || order.orderId,
+          amount: order.finalAmount,
+          invoiceUrl: zohoInvoiceUrl,
+        });
+      }
     } catch (error: any) {
-      console.error('Zoho Sync Failed:', error);
+      console.error('[SalesOrderSync] ❌ Zoho Sync FAILED:', {
+        message: error?.message,
+        response: error?.response?.data || error?.response?.status,
+        stack: error?.stack?.split('\n').slice(0, 3).join('\n'),
+      });
 
       order.zohoSyncError = error.message;
       await order.save();
       this.logSavedOrderDetails(order);
+
+      const docNumbers = [order.quotationNumber, order.invoiceNumber].filter(Boolean);
+      if (docNumbers.length > 0) {
+        await this.salesDocumentModel.updateMany(
+          {
+            salesperson_id: order.salesId,
+            documentNumber: { $in: docNumbers },
+          },
+          {
+            $set: {
+              zohoSyncError: error.message,
+              'data.zohoSyncError': error.message,
+            },
+          },
+        );
+      }
     }
   }
 
@@ -579,7 +795,7 @@ export class OrdersService {
       JSON.stringify(savedOrder, null, 2),
     );
   }
-} 
+}
 
 function orderIdFromDto(dto: any) {
   return dto.orderId || dto.quotationNumber || dto.documentNumber || '';

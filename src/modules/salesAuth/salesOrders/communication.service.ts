@@ -59,6 +59,44 @@ export class CommunicationService {
     await this.sendWhatsApp(payload.customerPhone, message);
   }
 
+  async sendInvoiceNotification(params: {
+    customerPhone: string;
+    customerName: string;
+    invoiceNumber: string;
+    amount: number;
+    invoiceUrl: string;
+  }) {
+    const text = [
+      '🌿 *TCBT Jaivik Kisan*',
+      `Dear ${params.customerName},`,
+      `Thank you for your payment of *₹${params.amount.toFixed(2)}*.`,
+      `Your invoice *${params.invoiceNumber}* has been successfully generated.`,
+      `You can view/download your tax invoice here:`,
+      `📄 ${params.invoiceUrl}`,
+      '━━━━━━━━━━━━━━━━',
+      '🌱 *TCBT Jaivik Kisan Pvt. Ltd.*',
+      '📞 +91 90390 07835',
+    ].join('\n');
+
+    const cleanPhone = params.customerPhone.trim();
+    if (cleanPhone) {
+      try {
+        const hasSms = Boolean(process.env.MSG91_AUTH_KEY);
+        const hasWa = Boolean(process.env.WHATSAPP_API_URL && process.env.WHATSAPP_API_KEY);
+
+        if (hasWa) {
+          await this.sendWhatsApp(cleanPhone, text);
+        } else if (hasSms) {
+          await this.sendSms(cleanPhone, text);
+        } else {
+          this.logger.warn('No messaging provider configured (MSG91/WhatsApp) to send invoice link');
+        }
+      } catch (error: any) {
+        this.logger.error(`Failed to send invoice notification to ${cleanPhone}: ${error.message}`);
+      }
+    }
+  }
+
   private async sendSms(phone: string, text: string) {
     const authKey = process.env.MSG91_AUTH_KEY;
     const sender = process.env.MSG91_SMS_SENDER_ID || 'TCBTIN';
