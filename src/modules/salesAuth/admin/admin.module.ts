@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ZohoModule } from '../../../zoho/zoho.module';
 import { SalesAdminController } from './admin.controller';
 import { SalesAdminGuard } from '../guards/sales-admin.guard';
 import { SalesAdmin, SalesAdminSchema } from '../models/sales-admin.schema';
@@ -15,6 +16,7 @@ import { SalesAuthService } from '../salesAuth.service';
 @Module({
   imports: [
     ConfigModule,
+    ZohoModule,
     MongooseModule.forFeature([
       { name: SalesAdmin.name, schema: SalesAdminSchema },
       { name: Salesperson.name, schema: SalespersonSchema },

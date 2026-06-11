@@ -12,6 +12,7 @@ import { Coupon } from '../../coupon/schema/coupon.schema';
 import { CommunicationService } from './communication.service';
 import { SendQuotationDto } from './dto/send-quotation.dto';
 import { SalesDocument } from '../models/sales-document.schema';
+import { Salesperson } from '../models/salesperson.schema';
 
 @Injectable()
 export class OrdersService {
@@ -19,6 +20,7 @@ export class OrdersService {
     private zohoInventoryService: ZohoInventoryService,
     @InjectModel(Order.name) private orderModel: Model<Order>,
     @InjectModel(SalesDocument.name) private readonly salesDocumentModel: Model<SalesDocument>,
+    @InjectModel(Salesperson.name) private readonly salespersonModel: Model<Salesperson>,
     private appApi: AppApiService,
     private paymentService: ZohoPaymentGatewayService,
     private shippingService: ShippingService,
@@ -114,9 +116,20 @@ export class OrdersService {
     const { quotation, paymentId, amount } = params;
     const data: any = quotation.data || {};
     const quotationNumber = quotation.documentNumber;
-    const invoiceNumber =
+    let invoiceNumber =
       data.relatedInvoiceNumber ||
       quotationNumber.replace('QT-', 'INV-');
+
+    if (invoiceNumber.length > 16) {
+      invoiceNumber = invoiceNumber.replace('INV-', 'I-');
+    }
+    if (invoiceNumber.length > 16) {
+      invoiceNumber = invoiceNumber.replace(/-/g, '');
+    }
+    if (invoiceNumber.length > 16) {
+      invoiceNumber = invoiceNumber.slice(0, 16);
+    }
+
     const orderId = `SO-${quotationNumber}`;
 
     console.log('[SalesOrderSync] Starting createOrUpdatePaidOrderFromQuotation:', {
@@ -661,11 +674,23 @@ export class OrdersService {
         })),
       );
 
-      // Look up the Zoho salesperson ID by name (required by Zoho when salespersons are enabled)
+      // Look up the Zoho salesperson ID
       let salespersonId: string | null = null;
-      if (order.salesName) {
+      if (order.salesId) {
+        try {
+          const sp = await this.salespersonModel.findOne({ salesperson_id: order.salesId }).lean();
+          if (sp?.zoho_salesperson_id) {
+            salespersonId = sp.zoho_salesperson_id;
+            console.log('[SalesOrderSync] Found zoho_salesperson_id in db:', salespersonId);
+          }
+        } catch (err: any) {
+          console.warn('[SalesOrderSync] Failed to query salesperson from db:', err.message);
+        }
+      }
+
+      if (!salespersonId && order.salesName) {
         salespersonId = await this.zohoInventoryService.findSalespersonId(order.salesName);
-        console.log('[SalesOrderSync] Zoho salesperson lookup:', { name: order.salesName, id: salespersonId || '❌ NOT FOUND' });
+        console.log('[SalesOrderSync] Fallback Zoho salesperson lookup:', { name: order.salesName, id: salespersonId || '❌ NOT FOUND' });
       }
 
       const zohoOrderId = await this.zohoInventoryService.createSalesOrder(

@@ -23,6 +23,9 @@ export class Salesperson extends Document {
   @Prop({ trim: true })
   mobile_number?: string;
 
+  @Prop({ trim: true })
+  zoho_salesperson_id?: string;
+
   @Prop({ default: true })
   is_active!: boolean;
 

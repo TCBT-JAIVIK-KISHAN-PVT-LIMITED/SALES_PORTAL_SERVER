@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Query,
+  Param,
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
@@ -16,11 +17,23 @@ export class CallbackController {
     private readonly zohoPaymentsService: ZohoPaymentsService,
   ) { }
 
+  @Get('auth-url/:service')
+  getAuthUrl(@Param('service') service: ZohoService) {
+    const allowedServices: ZohoService[] = ['crm', 'inventory', 'payments', 'books'];
+    if (!allowedServices.includes(service)) {
+      throw new BadRequestException(`Invalid service: ${service}`);
+    }
+    return {
+      url: this.zohoAuthService.getAuthUrl(service),
+    };
+  }
+
   @Get()
   async handleCallback(
     @Query('code') code?: string,
     @Query('state') service?: ZohoService
   ) {
+    console.log(`[DEBUG] handleCallback called with code: "${code}", state: "${service}"`);
     if (!code) {
       throw new BadRequestException('Authorization code missing');
     }
@@ -29,7 +42,7 @@ export class CallbackController {
       throw new BadRequestException('Service (state) missing');
     }
 
-    const allowedServices: ZohoService[] = ['crm', 'inventory', 'payments'];
+    const allowedServices: ZohoService[] = ['crm', 'inventory', 'payments', 'books'];
 
     if (!allowedServices.includes(service)) {
       throw new BadRequestException(`Invalid service: ${service}`);
@@ -38,6 +51,7 @@ export class CallbackController {
     try {
 
       if (service === 'payments') {
+        console.log('[DEBUG] Exchanging token for payments service');
         const data = await this.zohoPaymentsService.exchangeCodeForToken(code);
 
         return {
@@ -46,11 +60,13 @@ export class CallbackController {
         };
       }
 
+      console.log(`[DEBUG] Calling zohoAuthService.exchangeCodeForToken for service: ${service}`);
       const data = await this.zohoAuthService.exchangeCodeForToken(
         code,
         service,
       );
 
+      console.log(`[DEBUG] Exchange succeeded for service: ${service}`);
       return {
         success: true,
         message: `Zoho token saved successfully`,
@@ -59,7 +75,7 @@ export class CallbackController {
         scope: data.scope,
       };
     } catch (error: any) {
-      console.error('Zoho Callback Error:', error);
+      console.error('[DEBUG] Zoho Callback Error:', error);
 
       throw new InternalServerErrorException('Failed to exchange Zoho token');
     }

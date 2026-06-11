@@ -9,6 +9,7 @@ import { SalesAuthService } from './salesAuth.service';
 import { SalesAdminModule } from './admin/admin.module';
 import { SalesModule } from './salesperson/sales.module';
 import { OrdersModule as SalesOrdersModule } from './salesOrders/orders.module';
+import { ZohoModule } from '../../zoho/zoho.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { OrdersModule as SalesOrdersModule } from './salesOrders/orders.module';
     SalesAdminModule,
     SalesModule,
     SalesOrdersModule,
+    ZohoModule,
   ],
   providers: [SalesAuthService],
   exports: [SalesAuthService, SalesAdminModule, SalesModule, SalesOrdersModule],

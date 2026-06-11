@@ -22,6 +22,14 @@ export class ZohoAuthService {
       this.configService.getOrThrow<string>('ZOHO_REDIRECT_URI');
 
     try {
+      console.log('[DEBUG] ZohoAuthService exchange request parameters:', {
+        clientId: clientId ? `${clientId.substring(0, 8)}...` : 'undefined',
+        clientSecretExists: !!clientSecret,
+        redirectUri,
+        code: code ? `${code.substring(0, 12)}...` : 'undefined',
+        service,
+      });
+
       const response = await fetch('https://accounts.zoho.in/oauth/v2/token', {
         method: 'POST',
         headers: {
@@ -37,6 +45,7 @@ export class ZohoAuthService {
       });
 
       const data = await response.json();
+      console.log('[DEBUG] ZohoAuthService exchange response status:', response.status, 'data:', data);
 
       if (!response.ok || data.error) {
         throw new Error(data.error || 'Zoho token exchange failed');
@@ -138,6 +147,7 @@ export class ZohoAuthService {
       crm: 'ZohoCRM.modules.ALL',
       inventory: 'ZohoInventory.fullaccess.all',
       payments: 'ZohoPay.payments.CREATE',
+      books: 'ZohoBooks.fullaccess.all',
     };
 
     const clientId = this.configService.getOrThrow<string>('ZOHO_CLIENT_ID');

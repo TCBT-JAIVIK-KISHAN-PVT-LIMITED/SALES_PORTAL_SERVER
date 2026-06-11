@@ -16,6 +16,7 @@ import { SalesDocument } from './models/sales-document.schema';
 import { SalesAdminLoginDto } from './dto/sales-admin-login.dto';
 import { CreateSalespersonDto } from './dto/create-salesperson.dto';
 import { SalespersonLoginDto } from './dto/salesperson-login.dto';
+import { ZohoBooksService } from '../../zoho/books/books.service';
 
 type SalesAuthRole = 'sales_admin' | 'salesperson';
 
@@ -32,6 +33,7 @@ export class SalesAuthService implements OnModuleInit {
     private salesDocumentModel: Model<SalesDocument>,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private readonly zohoBooksService: ZohoBooksService,
   ) {}
 
   async onModuleInit() {
@@ -169,6 +171,29 @@ export class SalesAuthService implements OnModuleInit {
       throw new ConflictException('Salesperson ID already exists');
     }
 
+    let zohoSalespersonId: string | undefined;
+    try {
+      const foundId = await this.zohoBooksService.findSalespersonId(
+        dto.name.trim(),
+        dto.email?.trim(),
+      );
+
+      if (foundId) {
+        zohoSalespersonId = foundId;
+        console.log('[SalesAuthService] Found existing salesperson in Zoho Books:', foundId);
+      } else {
+        const zSp = await this.zohoBooksService.createSalesperson(
+          dto.name.trim(),
+          dto.email?.trim(),
+        );
+        zohoSalespersonId = zSp?.salesperson_id;
+        console.log('[SalesAuthService] Created new salesperson in Zoho Books:', zohoSalespersonId);
+      }
+    } catch (err: any) {
+      console.error('[SalesAuthService] Failed to create/find salesperson in Zoho Books:', err.message);
+      throw new ConflictException(`Zoho Books integration failed: ${err.message}`);
+    }
+
     const password_hash = await bcrypt.hash(dto.password, 10);
 
     const salesperson = await this.salespersonModel.create({
@@ -177,6 +202,7 @@ export class SalesAuthService implements OnModuleInit {
       name: dto.name.trim(),
       email: dto.email?.trim().toLowerCase(),
       mobile_number: dto.mobile_number?.trim(),
+      zoho_salesperson_id: zohoSalespersonId,
       created_by_admin_id: admin.sub,
     });
 

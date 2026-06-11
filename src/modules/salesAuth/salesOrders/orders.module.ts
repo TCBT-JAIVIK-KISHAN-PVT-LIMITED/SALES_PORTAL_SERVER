@@ -5,6 +5,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { OrdersService } from './orders.service';
 import { Order, OrderSchema } from './schemas/order.schema';
 import { SalesDocument, SalesDocumentSchema } from '../models/sales-document.schema';
+import { Salesperson, SalespersonSchema } from '../models/salesperson.schema';
 import { PaymentsModule } from '../../../integrations/payments/payments.module';
 import { OrdersController } from './orders.controller';
 import { ZohoModule } from '../../../zoho/zoho.module';
@@ -30,6 +31,7 @@ import { SalespersonGuard } from '../guards/salesperson.guard';
     MongooseModule.forFeature([
       { name: Order.name, schema: OrderSchema },
       { name: SalesDocument.name, schema: SalesDocumentSchema },
+      { name: Salesperson.name, schema: SalespersonSchema },
     ]),
     ZohoModule,
     PaymentsModule,

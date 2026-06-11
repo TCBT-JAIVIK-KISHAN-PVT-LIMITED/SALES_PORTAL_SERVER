@@ -74,14 +74,15 @@ export class ZohoInventoryService {
         this.inventoryUrl('/salespersons'),
         'inventory',
       );
-      const list: any[] = spRes?.salespersons || [];
+      const list: any[] = spRes?.data || spRes?.salespersons || [];
       console.log('[ZohoInventory] Salespersons from /salespersons:', list.map((s: any) => ({
         id: s.salesperson_id,
-        name: s.name,
+        name: s.salesperson_name || s.name,
       })));
       for (const sp of list) {
-        if (sp.salesperson_id && sp.name) {
-          this.salespersonCache[(sp.name || '').toLowerCase().trim()] = sp.salesperson_id;
+        const spName = sp.salesperson_name || sp.name;
+        if (sp.salesperson_id && spName) {
+          this.salespersonCache[(spName || '').toLowerCase().trim()] = sp.salesperson_id;
         }
       }
       return this.salespersonCache[key] || null;
@@ -265,24 +266,8 @@ export class ZohoInventoryService {
         };
       }),
       shipping_charge: order.shippingCharge || 0,
-      billing_address: {
-        address: this.limitAddress(
-          order.address?.billingAddress || order.address?.addressLine,
-        ),
-        city: order.address?.city,
-        state: order.address?.state,
-        zip: order.address?.pincode,
-        phone: order.address?.phone,
-      },
-      shipping_address: {
-        address: this.limitAddress(
-          order.address?.billingAddress || order.address?.addressLine,
-        ),
-        city: order.address?.city,
-        state: order.address?.state,
-        zip: order.address?.pincode,
-        phone: order.address?.phone,
-      },
+      // Note: billing_address/shipping_address omitted — Zoho uses the contact's stored address.
+      // Sending it causes "billing_address > 100 chars" errors from Zoho due to JSON serialization checks.
     };
 
     const response = await this.http.request(
