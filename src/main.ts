@@ -58,7 +58,9 @@ async function bootstrap() {
   app.use('/sales-auth/salesperson/sales-orders/payments/webhook', bodyParser.raw({ type: '*/*' }));
 
   // ✅ Normal JSON parser for all other routes
-  app.use(bodyParser.json());
+  const bodyLimit = process.env.BODY_LIMIT || '10mb';
+  app.use(bodyParser.json({ limit: bodyLimit }));
+  app.use(bodyParser.urlencoded({ extended: true, limit: bodyLimit }));
 
   const port = Number(process.env.BACKEND_PORT ?? 3002);
   console.log(`[Nest] Starting on port ${port}`);
