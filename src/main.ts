@@ -10,9 +10,6 @@ async function bootstrap() {
     bodyParser: false, // ✅ Disable default parser (IMPORTANT)
   });
 
-  // 🔐 Security
-  app.use(helmet());
-
   // ✅ Validation
   app.useGlobalPipes(
     new ValidationPipe({
@@ -23,12 +20,26 @@ async function bootstrap() {
   );
 
   // 🌍 CORS
+  // 🌍 CORS MUST COME FIRST
   app.enableCors({
-    origin: true,
+    origin: [
+      'https://sales-portal-next.vercel.app',
+      'http://localhost:3000',
+    ],
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+    ],
   });
+
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: false,
+    }),
+  );
 
   const config = new DocumentBuilder()
     .setTitle('My API')
