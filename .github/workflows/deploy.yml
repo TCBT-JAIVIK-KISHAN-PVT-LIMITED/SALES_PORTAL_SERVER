@@ -19,7 +19,7 @@ jobs:
           script: |
             cd /home/ubuntu/sales-portal-server
 
-            echo "📥 Pull latest code"
+            echo "Pull latest code"
             git pull origin main
 
             echo "📦 Install dependencies"
