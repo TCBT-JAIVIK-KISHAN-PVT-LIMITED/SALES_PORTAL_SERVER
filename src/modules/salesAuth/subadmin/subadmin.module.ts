@@ -1,18 +1,18 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
-import { ZohoModule } from '../../../zoho/zoho.module';
-import { SalesAdminController } from './admin.controller';
-import { SalesAdminGuard } from '../guards/sales-admin.guard';
+import { SubAdminController } from './subadmin.controller';
+import { SalesAuthService } from '../salesAuth.service';
+import { SubAdminGuard } from '../guards/subadmin.guard';
 import { SalesAdmin, SalesAdminSchema } from '../models/sales-admin.schema';
-import {
-  Salesperson,
-  SalespersonSchema,
-} from '../models/salesperson.schema';
+import { Salesperson, SalespersonSchema } from '../models/salesperson.schema';
 import { SalesDocument, SalesDocumentSchema } from '../models/sales-document.schema';
 import { SalesSubAdmin, SalesSubAdminSchema } from '../models/sales-subadmin.schema';
-import { SalesAuthService } from '../salesAuth.service';
+import { Order, OrderSchema } from '../salesOrders/schemas/order.schema';
+import { ZohoModule } from '../../../zoho/zoho.module';
+import { RolesGuard } from '../guards/roles.guard';
+import { HierarchyGuard } from '../guards/hierarchy.guard';
 
 @Module({
   imports: [
@@ -23,6 +23,7 @@ import { SalesAuthService } from '../salesAuth.service';
       { name: Salesperson.name, schema: SalespersonSchema },
       { name: SalesDocument.name, schema: SalesDocumentSchema },
       { name: SalesSubAdmin.name, schema: SalesSubAdminSchema },
+      { name: Order.name, schema: OrderSchema },
     ]),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -34,8 +35,8 @@ import { SalesAuthService } from '../salesAuth.service';
       }),
     }),
   ],
-  controllers: [SalesAdminController],
-  providers: [SalesAuthService, SalesAdminGuard],
-  exports: [SalesAuthService, SalesAdminGuard],
+  controllers: [SubAdminController],
+  providers: [SalesAuthService, SubAdminGuard, RolesGuard, HierarchyGuard],
+  exports: [SalesAuthService, SubAdminGuard, RolesGuard, HierarchyGuard],
 })
-export class SalesAdminModule {}
+export class SubAdminModule {}

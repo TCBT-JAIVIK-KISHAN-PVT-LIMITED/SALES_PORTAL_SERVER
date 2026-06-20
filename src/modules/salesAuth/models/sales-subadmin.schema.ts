@@ -7,30 +7,34 @@ import { Document } from 'mongoose';
     updatedAt: 'updated_at',
   },
 })
-export class SalesAdmin extends Document {
-  @Prop({ required: true, unique: true, default: 'SALES_ADMIN' })
-  singleton_key!: string;
-
+export class SalesSubAdmin extends Document {
   @Prop({ required: true, unique: true, trim: true })
-  admin_id!: string;
+  subadmin_id!: string;
 
   @Prop({ required: true })
   password_hash!: string;
 
-  @Prop({ trim: true })
-  name?: string;
+  @Prop({ required: true, trim: true })
+  name!: string;
 
   @Prop({ trim: true, lowercase: true })
   email?: string;
 
-  @Prop({ required: true, default: 'sales_admin' })
+  @Prop({ trim: true })
+  mobile_number?: string;
+
+  @Prop({ required: true, default: 'subadmin' })
   role!: string;
 
   @Prop({ default: true })
   is_active!: boolean;
 
+  @Prop({ required: true })
+  created_by_admin_id!: string;
+
   @Prop()
   last_login_at?: Date;
 }
 
-export const SalesAdminSchema = SchemaFactory.createForClass(SalesAdmin);
+export const SalesSubAdminSchema = SchemaFactory.createForClass(SalesSubAdmin);
+export type SalesSubAdminDocument = SalesSubAdmin & Document;

@@ -26,11 +26,17 @@ export class Salesperson extends Document {
   @Prop({ trim: true })
   zoho_salesperson_id?: string;
 
+  @Prop({ required: true, default: 'salesperson' })
+  role!: string;
+
   @Prop({ default: true })
   is_active!: boolean;
 
   @Prop({ required: true })
   created_by_admin_id!: string;
+
+  @Prop({ trim: true, index: true })
+  assigned_subadmin_id?: string;
 
   @Prop()
   last_login_at?: Date;

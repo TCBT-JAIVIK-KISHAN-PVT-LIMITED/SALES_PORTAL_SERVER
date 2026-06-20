@@ -5,10 +5,12 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { SalesAdmin, SalesAdminSchema } from './models/sales-admin.schema';
 import { Salesperson, SalespersonSchema } from './models/salesperson.schema';
 import { SalesDocument, SalesDocumentSchema } from './models/sales-document.schema';
+import { SalesSubAdmin, SalesSubAdminSchema } from './models/sales-subadmin.schema';
 import { SalesAuthService } from './salesAuth.service';
 import { SalesAdminModule } from './admin/admin.module';
 import { SalesModule } from './salesperson/sales.module';
 import { OrdersModule as SalesOrdersModule } from './salesOrders/orders.module';
+import { SubAdminModule } from './subadmin/subadmin.module';
 import { ZohoModule } from '../../zoho/zoho.module';
 
 @Module({
@@ -18,6 +20,7 @@ import { ZohoModule } from '../../zoho/zoho.module';
       { name: SalesAdmin.name, schema: SalesAdminSchema },
       { name: Salesperson.name, schema: SalespersonSchema },
       { name: SalesDocument.name, schema: SalesDocumentSchema },
+      { name: SalesSubAdmin.name, schema: SalesSubAdminSchema },
     ]),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -31,9 +34,10 @@ import { ZohoModule } from '../../zoho/zoho.module';
     SalesAdminModule,
     SalesModule,
     SalesOrdersModule,
+    SubAdminModule,
     ZohoModule,
   ],
   providers: [SalesAuthService],
-  exports: [SalesAuthService, SalesAdminModule, SalesModule, SalesOrdersModule],
+  exports: [SalesAuthService, SalesAdminModule, SalesModule, SalesOrdersModule, SubAdminModule],
 })
 export class SalesAuthModule {}

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -13,12 +14,15 @@ import * as bcrypt from 'bcrypt';
 import { SalesAdmin } from './models/sales-admin.schema';
 import { Salesperson } from './models/salesperson.schema';
 import { SalesDocument } from './models/sales-document.schema';
+import { SalesSubAdmin } from './models/sales-subadmin.schema';
 import { SalesAdminLoginDto } from './dto/sales-admin-login.dto';
 import { CreateSalespersonDto } from './dto/create-salesperson.dto';
 import { SalespersonLoginDto } from './dto/salesperson-login.dto';
+import { CreateSubAdminDto } from './dto/create-subadmin.dto';
+import { SubAdminLoginDto } from './dto/subadmin-login.dto';
 import { ZohoBooksService } from '../../zoho/books/books.service';
 
-type SalesAuthRole = 'sales_admin' | 'salesperson';
+type SalesAuthRole = 'sales_admin' | 'subadmin' | 'salesperson';
 
 @Injectable()
 export class SalesAuthService implements OnModuleInit {
@@ -31,6 +35,8 @@ export class SalesAuthService implements OnModuleInit {
     private salespersonModel: Model<Salesperson>,
     @InjectModel(SalesDocument.name)
     private salesDocumentModel: Model<SalesDocument>,
+    @InjectModel(SalesSubAdmin.name)
+    private salesSubAdminModel: Model<SalesSubAdmin>,
     private jwtService: JwtService,
     private configService: ConfigService,
     private readonly zohoBooksService: ZohoBooksService,
@@ -307,6 +313,7 @@ export class SalesAuthService implements OnModuleInit {
       admin_id: admin.admin_id,
       name: admin.name,
       email: admin.email,
+      role: admin.role || 'sales_admin',
       is_active: admin.is_active,
       last_login_at: admin.last_login_at,
     };
@@ -319,9 +326,151 @@ export class SalesAuthService implements OnModuleInit {
       name: salesperson.name,
       email: salesperson.email,
       mobile_number: salesperson.mobile_number,
+      role: salesperson.role || 'salesperson',
       is_active: salesperson.is_active,
       created_by_admin_id: salesperson.created_by_admin_id,
+      assigned_subadmin_id: salesperson.assigned_subadmin_id,
       last_login_at: salesperson.last_login_at,
+    };
+  }
+
+  async loginSubAdmin(dto: SubAdminLoginDto) {
+    const subadmin = await this.salesSubAdminModel.findOne({
+      subadmin_id: dto.subadmin_id.trim(),
+      is_active: true,
+    });
+
+    if (!subadmin) {
+      throw new UnauthorizedException('Invalid subadmin credentials');
+    }
+
+    const passwordOk = await bcrypt.compare(dto.password, subadmin.password_hash);
+    if (!passwordOk) {
+      throw new UnauthorizedException('Invalid subadmin credentials');
+    }
+
+    subadmin.last_login_at = new Date();
+    await subadmin.save();
+
+    const access_token = this.signToken(
+      subadmin._id.toString(),
+      'subadmin',
+      subadmin.subadmin_id,
+    );
+
+    return {
+      access_token,
+      subadmin: this.toSubAdminResponse(subadmin),
+    };
+  }
+
+  async createSubAdmin(dto: CreateSubAdminDto, adminId: string) {
+    const subadminId = dto.subadmin_id.trim();
+    const existing = await this.salesSubAdminModel.exists({
+      subadmin_id: subadminId,
+    });
+
+    if (existing) {
+      throw new ConflictException('Sub Admin ID already exists');
+    }
+
+    const password_hash = await bcrypt.hash(dto.password, 10);
+    const subadmin = await this.salesSubAdminModel.create({
+      subadmin_id: subadminId,
+      password_hash,
+      name: dto.name.trim(),
+      email: dto.email?.trim().toLowerCase(),
+      mobile_number: dto.mobile_number?.trim(),
+      created_by_admin_id: adminId,
+    });
+
+    return {
+      message: 'Sub Admin created successfully',
+      subadmin: this.toSubAdminResponse(subadmin),
+    };
+  }
+
+  async updateSubAdmin(subadminId: string, updates: any) {
+    const subadmin = await this.salesSubAdminModel.findOne({ subadmin_id: subadminId.trim() });
+    if (!subadmin) {
+      throw new NotFoundException('Sub Admin not found');
+    }
+
+    if (updates.name) subadmin.name = updates.name.trim();
+    if (updates.email) subadmin.email = updates.email.trim().toLowerCase();
+    if (updates.mobile_number !== undefined) subadmin.mobile_number = updates.mobile_number.trim();
+    if (updates.password) subadmin.password_hash = await bcrypt.hash(updates.password, 10);
+    if (updates.is_active !== undefined) subadmin.is_active = updates.is_active;
+
+    await subadmin.save();
+    return {
+      message: 'Sub Admin updated successfully',
+      subadmin: this.toSubAdminResponse(subadmin),
+    };
+  }
+
+  async deleteSubAdmin(subadminId: string) {
+    const deleted = await this.salesSubAdminModel.findOneAndDelete({
+      subadmin_id: subadminId.trim(),
+    });
+
+    if (!deleted) {
+      throw new NotFoundException('Sub Admin not found');
+    }
+
+    // Unassign salespeople from this subadmin
+    await this.salespersonModel.updateMany(
+      { assigned_subadmin_id: subadminId.trim() },
+      { $unset: { assigned_subadmin_id: '' } },
+    );
+
+    return {
+      message: 'Sub Admin deleted successfully',
+      subadmin_id: subadminId,
+    };
+  }
+
+  async assignSalesperson(salespersonId: string, subadminId: string | null) {
+    const salesperson = await this.salespersonModel.findOne({ salesperson_id: salespersonId.trim() });
+    if (!salesperson) {
+      throw new NotFoundException('Salesperson not found');
+    }
+
+    if (subadminId) {
+      const subadmin = await this.salesSubAdminModel.findOne({ subadmin_id: subadminId.trim() });
+      if (!subadmin) {
+        throw new NotFoundException('Sub Admin not found');
+      }
+      if (!subadmin.is_active) {
+        throw new BadRequestException('Cannot assign salesperson to an inactive Sub Admin');
+      }
+      salesperson.assigned_subadmin_id = subadminId.trim();
+    } else {
+      salesperson.assigned_subadmin_id = undefined;
+      await this.salespersonModel.updateOne(
+        { salesperson_id: salespersonId.trim() },
+        { $unset: { assigned_subadmin_id: '' } },
+      );
+    }
+
+    await salesperson.save();
+    return {
+      message: subadminId ? 'Salesperson assigned successfully' : 'Salesperson unassigned successfully',
+      salesperson: this.toSalespersonResponse(salesperson),
+    };
+  }
+
+  private toSubAdminResponse(subadmin: SalesSubAdmin) {
+    return {
+      id: subadmin._id.toString(),
+      subadmin_id: subadmin.subadmin_id,
+      name: subadmin.name,
+      email: subadmin.email,
+      mobile_number: subadmin.mobile_number,
+      role: subadmin.role || 'subadmin',
+      is_active: subadmin.is_active,
+      created_by_admin_id: subadmin.created_by_admin_id,
+      last_login_at: subadmin.last_login_at,
     };
   }
 }

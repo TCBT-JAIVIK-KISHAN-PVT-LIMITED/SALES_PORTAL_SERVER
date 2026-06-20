@@ -13,6 +13,10 @@ import {
   SalesDocument,
   SalesDocumentSchema,
 } from '../models/sales-document.schema';
+import {
+  SalesSubAdmin,
+  SalesSubAdminSchema,
+} from '../models/sales-subadmin.schema';
 import { SalespersonGuard } from '../guards/salesperson.guard';
 import { SalesController } from './sales.controller';
 import { SalesAuthService } from '../salesAuth.service';
@@ -27,6 +31,7 @@ import { SalesDocumentPaymentsModule } from './payment/sales-document-payments.m
       { name: Salesperson.name, schema: SalespersonSchema },
 
       { name: SalesDocument.name, schema: SalesDocumentSchema },
+      { name: SalesSubAdmin.name, schema: SalesSubAdminSchema },
     ]),
     JwtModule.registerAsync({
       inject: [ConfigService],
