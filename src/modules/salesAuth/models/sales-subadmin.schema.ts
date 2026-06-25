@@ -33,6 +33,9 @@ export class SalesSubAdmin extends Document {
   created_by_admin_id!: string;
 
   @Prop()
+  zoho_salesperson_id?: string;
+
+  @Prop()
   last_login_at?: Date;
 }
 

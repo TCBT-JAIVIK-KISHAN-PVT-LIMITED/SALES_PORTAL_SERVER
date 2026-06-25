@@ -10,10 +10,8 @@ import { PaymentsModule } from '../../../integrations/payments/payments.module';
 import { OrdersController } from './orders.controller';
 import { ZohoModule } from '../../../zoho/zoho.module';
 
-import { ShippingModule } from '../../../integrations/shipping/shipping.module';
 import { SmsService } from './sms.service';
 import { CommunicationService } from './communication.service';
-import { CouponModule } from '../../coupon/coupon.module';
 import { SalespersonGuard } from '../guards/salesperson.guard';
 
 @Module({
@@ -35,8 +33,6 @@ import { SalespersonGuard } from '../guards/salesperson.guard';
     ]),
     ZohoModule,
     PaymentsModule,
-    ShippingModule,
-    CouponModule
   ],
   controllers: [OrdersController],
   providers: [OrdersService, SmsService, CommunicationService, SalespersonGuard],

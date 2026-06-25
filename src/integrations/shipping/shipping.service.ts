@@ -17,8 +17,8 @@ export class ShippingService {
       baseURL: this.configService.get<string>('SHIPMOZO_BASE_URL'),
       timeout: 5000,
     });
-    this.fallbackShippingCharge = Number(
-      this.configService.get<string>('SHIPMOZO_FALLBACK_CHARGE') ?? 0,
+    this.fallbackShippingCharge = Math.ceil(
+      Number(this.configService.get<string>('SHIPMOZO_FALLBACK_CHARGE') ?? 0),
     );
   }
 
@@ -88,7 +88,7 @@ export class ShippingService {
 
       return {
         success: true,
-        shippingCharge: Number(selected.total_charges) || 0,
+        shippingCharge: Math.ceil(Number(selected.total_charges) || 0),
         courier: selected.name,
         estimatedDelivery: selected.estimated_delivery,
         fullResponse: selected,

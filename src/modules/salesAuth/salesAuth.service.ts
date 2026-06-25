@@ -374,6 +374,30 @@ export class SalesAuthService implements OnModuleInit {
       throw new ConflictException('Sub Admin ID already exists');
     }
 
+    // Register as salesperson in Zoho Books (team leader is also a salesperson)
+    let zohoSalespersonId: string | undefined;
+    try {
+      const foundId = await this.zohoBooksService.findSalespersonId(
+        dto.name.trim(),
+        dto.email?.trim(),
+      );
+
+      if (foundId) {
+        zohoSalespersonId = foundId;
+        console.log('[SalesAuthService] Found existing salesperson in Zoho Books for subadmin:', foundId);
+      } else {
+        const zSp = await this.zohoBooksService.createSalesperson(
+          dto.name.trim(),
+          dto.email?.trim(),
+        );
+        zohoSalespersonId = zSp?.salesperson_id;
+        console.log('[SalesAuthService] Created new salesperson in Zoho Books for subadmin:', zohoSalespersonId);
+      }
+    } catch (err: any) {
+      console.error('[SalesAuthService] Failed to create/find salesperson in Zoho Books for subadmin:', err.message);
+      throw new ConflictException(`Zoho Books integration failed: ${err.message}`);
+    }
+
     const password_hash = await bcrypt.hash(dto.password, 10);
     const subadmin = await this.salesSubAdminModel.create({
       subadmin_id: subadminId,
@@ -381,6 +405,7 @@ export class SalesAuthService implements OnModuleInit {
       name: dto.name.trim(),
       email: dto.email?.trim().toLowerCase(),
       mobile_number: dto.mobile_number?.trim(),
+      zoho_salesperson_id: zohoSalespersonId,
       created_by_admin_id: adminId,
     });
 

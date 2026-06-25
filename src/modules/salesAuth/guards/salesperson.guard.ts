@@ -25,9 +25,9 @@ export class SalespersonGuard implements CanActivate {
 
       if (
         payload?.auth_area !== 'sales_portal' ||
-        payload?.role !== 'salesperson'
+        !['salesperson', 'subadmin'].includes(payload?.role)
       ) {
-        throw new UnauthorizedException('Salesperson access required');
+        throw new UnauthorizedException('Sales portal access required');
       }
 
       request.salesUser = payload;

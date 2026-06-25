@@ -6,9 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ZohoPaymentGatewayService } from '../../../integrations/payments/zoho-payment-gateway.service';
 import { ZohoInventoryService } from '../../../zoho/inventory/inventory.service';
 import { AppApiService } from '../../../common/app-api.service';
-import { ShippingService } from '../../../integrations/shipping/shipping.service';
 import { SmsService } from './sms.service';
-import { Coupon } from '../../coupon/schema/coupon.schema';
 import { CommunicationService } from './communication.service';
 import { SendQuotationDto } from './dto/send-quotation.dto';
 import { SalesDocument } from '../models/sales-document.schema';
@@ -23,90 +21,10 @@ export class OrdersService {
     @InjectModel(Salesperson.name) private readonly salespersonModel: Model<Salesperson>,
     private appApi: AppApiService,
     private paymentService: ZohoPaymentGatewayService,
-    private shippingService: ShippingService,
     private readonly smsService: SmsService,
     private readonly communicationService: CommunicationService,
-    @InjectModel(Coupon.name)
-    private couponModel: Model<Coupon>,
   ) { }
 
-  async createOrder(salesId: string, dto: any) {
-    const { items, address, totalWeight, discount = 0, couponName = null } = dto;
-
-    if (!totalWeight || totalWeight <= 0) {
-      throw new BadRequestException('Invalid total weight from cart');
-    }
-
-    let totalAmount = 0;
-
-    const processedItems = items.map((item: any) => {
-      totalAmount += item.price * item.quantity;
-
-      return {
-        productId: item.productId,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        weight: item.weight,
-        image: item.image,
-        zohoItemId: item.zohoItemId || item.zoho_item_id,
-      };
-    });
-
-    const discountedAmount = Math.max(totalAmount - discount, 0);
-
-    const type_of_package = totalWeight < 20000 ? 'SPS' : 'B2B';
-
-    console.log('Total Weight:', totalWeight);
-    console.log('Type of Package:', type_of_package);
-    const deliveryPincode = address.pincode || address.pin;
-    console.log('Delivery Pincode:', deliveryPincode);
-    const shipping = await this.shippingService.calculateRate(
-      totalWeight,
-      Number(deliveryPincode),
-      type_of_package,
-    );
-
-    const shippingCharge = shipping.shippingCharge;
-    console.log('Calculated Shipping Charge:', shippingCharge);
-    const finalAmount = discountedAmount + shippingCharge;
-
-    const order = await this.orderModel.create({
-      salesId,
-      salesName: dto.salesName,
-      quotationNumber: dto.quotationNumber || dto.documentNumber || orderIdFromDto(dto),
-      invoiceNumber: dto.invoiceNumber,
-      customerName: dto.customerName || address?.name || address?.customerName,
-      customerPhone:
-        dto.customerPhone ||
-        address?.phone ||
-        address?.receiver_phone ||
-        address?.mobile,
-      orderId: `ORD-${uuidv4()}`,
-      items: processedItems,
-      totalAmount,
-      shippingCharge,
-      finalAmount,
-      address: this.normalizeAddress(address),
-      discount,
-      couponName,
-      orderStatus: 'created',
-      paymentStatus: 'pending',
-    });
-
-    const payment = await this.paymentService.createPaymentSession(order);
-
-
-    order.paymentSessionId = payment?.payments_session_id;
-    await order.save();
-
-    return {
-      shippingCharge,
-      finalAmount,
-      orderId: order.orderId,
-      paymentSessionId: order.paymentSessionId,
-    };
-  }
 
   async createOrUpdatePaidOrderFromQuotation(params: {
     quotation: SalesDocument;
@@ -193,7 +111,7 @@ export class OrdersService {
           orderId,
           items: normalizedItems,
           totalAmount,
-          shippingCharge: 0,
+          shippingCharge: Number(data.shippingCharge || 0),
           finalAmount,
           address,
           orderStatus: 'confirmed',
@@ -244,94 +162,6 @@ export class OrdersService {
     throw new BadRequestException('Unsupported channel');
   }
 
-  async createSalesOrder(salesId: string, dto: any) {
-    const { address, couponId } = dto;
-    const rawItems = Array.isArray(dto.items) ? dto.items : [];
-
-    if (!rawItems.length) {
-      throw new BadRequestException('Order items are required');
-    }
-
-    const items = await Promise.all(
-      rawItems.map(async (item: any) => {
-        const productId = item.productId || item.product_id || item.id;
-        const zohoItemId = item.zohoItemId || item.zoho_item_id;
-        const lookupId = zohoItemId || productId;
-
-        const product = lookupId
-          ? await this.appApi.getProductById(String(lookupId))
-          : null;
-
-        if (!product) {
-          throw new Error(`Product not found: ${productId || item.name}`);
-        }
-
-        const quantity = Number(item.quantity || 0);
-        if (quantity <= 0) {
-          throw new BadRequestException(`Invalid quantity for ${product.name}`);
-        }
-
-        const weight =
-          Number(item.weight) ||
-          (product.weight_unit === 'kg'
-            ? Number(product.weight || 0) * 1000
-            : Number(product.weight || 0));
-
-        return {
-          productId: product._id,
-          name: product.name,
-          price: Number(item.price || product.price || 0),
-          quantity,
-          weight,
-          image: product.image?.image_url,
-          zohoItemId: product.zoho_item_id,
-        };
-      }),
-    );
-
-    if (!address) {
-      throw new Error('Address not found');
-    }
-
-    const totalWeight =
-      Number(dto.totalWeight) ||
-      items.reduce(
-        (sum, item) => sum + Number(item.weight || 0) * Number(item.quantity || 0),
-        0,
-      );
-
-    let discount = 0;
-    let couponName: string | null = null;
-
-    if (couponId) {
-      const coupon = await this.couponModel.findById(couponId);
-
-      if (!coupon) {
-        throw new NotFoundException('Coupon not found');
-      }
-
-      couponName = coupon.name || null;
-
-      if (coupon.type === 'flat') {
-        discount = coupon.value;
-      } else if (coupon.type === 'percent') {
-        const subtotal = items.reduce(
-          (sum, item) => sum + item.price * item.quantity,
-          0,
-        );
-        discount = (subtotal * coupon.value) / 100;
-      }
-    }
-    const order = await this.createOrder(salesId, {
-      items,
-      address,
-      totalWeight,
-      discount,
-      couponName,
-    });
-
-    return order;
-  }
 
   async getOrders(salesId: string, page: number, limit: number) {
     const skip = (page - 1) * limit;

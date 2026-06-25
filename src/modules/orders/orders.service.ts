@@ -324,58 +324,22 @@ export class OrdersService {
     console.log('[RegularOrder] Items to sync:', order.items?.map((i: any) => ({ name: i.name, zohoItemId: i.zohoItemId || '❌ MISSING', qty: i.quantity, price: i.price })));
 
     try {
-      const zohoOrderId = await this.zohoInventoryService.createSalesOrder(order, zohoContactId);
-      console.log('[RegularOrder] ✅ Step 2a — Sales Order created:', zohoOrderId);
+      const result = await this.zohoInventoryService.createSalesOrderWithInvoice(
+        order,
+        zohoContactId,
+      );
 
-      order.zohoSalesOrderId = zohoOrderId;
+      order.zohoSalesOrderId = result.salesOrderId;
+      order.zohoInvoiceId = result.invoiceId;
+      order.zohoInvoiceNumber = result.invoiceNumber;
+      order.zohoPaymentId = result.paymentId;
       order.isSyncedToZoho = true;
       order.orderStatus = 'processing';
+
       await order.save();
-
-      let zohoInvoiceId: string | null = null;
-      let zohoInvoiceUrl: string | null = null;
-
-      try {
-        console.log('[RegularOrder] Step 2b — Creating invoice from SO:', zohoOrderId);
-        const zohoInvoice = await this.zohoInventoryService.createInvoiceForPaidOrder(order, zohoContactId, zohoOrderId);
-        console.log('[RegularOrder] createInvoiceForPaidOrder response:', JSON.stringify(zohoInvoice));
-        const invoiceId = zohoInvoice?.invoice_id;
-
-        if (invoiceId) {
-          zohoInvoiceId = invoiceId;
-          console.log('[RegularOrder] ✅ Invoice ID:', invoiceId);
-
-          const sentInvoice = await this.zohoInventoryService.markInvoiceAsSent(invoiceId);
-          zohoInvoiceUrl = sentInvoice?.invoice_url || zohoInvoice?.invoice_url || '';
-          console.log('[RegularOrder] ✅ Step 2c — Invoice marked as sent. URL:', zohoInvoiceUrl);
-
-          try {
-            console.log('[RegularOrder] Step 2d — Recording payment. amount:', order.finalAmount, 'paymentId:', order.paymentId);
-            const zohoPayment = await this.zohoInventoryService.recordCustomerPaymentForInvoice({
-              customerId: zohoContactId,
-              invoiceId,
-              amount: Number(order.finalAmount || 0),
-              paymentId: order.paymentId,
-            });
-            console.log('[RegularOrder] ✅ Zoho payment recorded:', zohoPayment?.payment_id);
-          } catch (payErr: any) {
-            console.error('[RegularOrder] ❌ recordCustomerPaymentForInvoice FAILED:', payErr.message);
-          }
-        } else {
-          console.warn('[RegularOrder] ⚠️ No invoice_id in response — invoice may not have been created');
-        }
-      } catch (invoiceErr: any) {
-        console.error('[RegularOrder] ❌ createInvoiceForPaidOrder FAILED:', invoiceErr.message);
-      }
-
-      if (zohoInvoiceId) {
-        order.zohoInvoiceId = zohoInvoiceId || undefined;
-        order.zohoInvoiceUrl = zohoInvoiceUrl || undefined;
-        await order.save();
-        console.log('[RegularOrder] ✅ Invoice info saved to order');
-      }
-
-      console.log(`[RegularOrder] ✅ FULL SYNC COMPLETE — SO: ${zohoOrderId}, Invoice: ${zohoInvoiceId}`);
+      console.log(
+        `[RegularOrder] ✅ Zoho sync complete — SO: ${result.salesOrderId}, Invoice: ${result.invoiceNumber}, Payment: ${result.paymentId}`,
+      );
     } catch (error: any) {
       console.error('[RegularOrder] ❌ Zoho sync FAILED:', error.message);
       console.error('[RegularOrder] Stack:', error.stack);

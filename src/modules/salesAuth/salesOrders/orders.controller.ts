@@ -26,20 +26,8 @@ export class OrdersController {
     private readonly configService: ConfigService,
   ) { }
 
-  @UseGuards(SalespersonGuard)
-  @Post()
-  async createOrder(
-    @CurrentSalesUser() salesperson: { login_id: string },
-    @Body() body: any,
-  ) {
-    const salesId = salesperson?.login_id;
 
-    if (!salesId) {
-      throw new UnauthorizedException('Salesperson not authenticated');
-    }
-   console.log('Creating order for salesperson:', salesId,body);
-    return this.ordersService.createSalesOrder(salesId, body);
-  }
+
 
   @Post('send-quotation')
   async sendQuotation(@Body() body: SendQuotationDto) {

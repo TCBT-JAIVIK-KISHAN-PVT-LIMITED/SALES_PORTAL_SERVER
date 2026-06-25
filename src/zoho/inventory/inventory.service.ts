@@ -3,6 +3,15 @@ import { ZohoHttpService } from '../core/zoho-http.service';
 import { ConfigService } from '@nestjs/config';
 import { ZohoAuthService } from '../core/zoho-auth.service';
 
+type ZohoAddressPayload = {
+  attention?: string;
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  phone?: string;
+};
+
 @Injectable()
 export class ZohoInventoryService {
   constructor(
@@ -23,6 +32,103 @@ export class ZohoInventoryService {
   private inventoryUrl(path: string) {
     const separator = path.includes('?') ? '&' : '?';
     return `https://www.zohoapis.in/inventory/v1${path}${separator}organization_id=${this.getOrgId()}`;
+  }
+
+  private buildZohoAddress(order: any): ZohoAddressPayload {
+    const address = order.address ?? {};
+    const line1 = address.billingAddress ?? address.addressLine ?? address.line1 ?? address.address;
+    const line2 = address.line2;
+    const rawStreet = line2 ? `${line1}, ${line2}` : line1;
+    const fullStreetAddress = this.limitAddress(rawStreet);
+    const phone =
+      order.customerMobile ?? address.phone ?? address.receiver_phone;
+
+    if (!line1 || !address.city || !address.state || !address.pincode) {
+      throw new Error('Order address is incomplete for Zoho sync');
+    }
+
+    const zohoAddress: ZohoAddressPayload = {
+      attention:
+        order.customerName ||
+        address.receiver_name ||
+        address.name ||
+        undefined,
+      address: fullStreetAddress,
+      city: address.city,
+      state: address.state,
+      zip: address.pincode,
+    };
+
+    if (phone) {
+      zohoAddress.phone = phone;
+    }
+
+    return zohoAddress;
+  }
+
+  private addressMatchesZoho(
+    address: any,
+    expected: ZohoAddressPayload,
+  ): boolean {
+    return (
+      String(address?.address ?? '').trim() === expected.address.trim() &&
+      String(address?.city ?? '').trim() === expected.city.trim() &&
+      String(address?.state ?? '').trim() === expected.state.trim() &&
+      String(address?.zip ?? '').trim() === expected.zip.trim()
+    );
+  }
+
+  private async upsertContactAddresses(
+    customerId: string,
+    order: any,
+  ): Promise<{
+    billingAddressId: string;
+    shippingAddressId: string;
+  }> {
+    const address = this.buildZohoAddress(order);
+    const contactName =
+      order.customerName || address.attention || 'App Customer';
+
+    const updateRes = await this.http.request(
+      'PUT',
+      this.inventoryUrl(`/contacts/${customerId}`),
+      'inventory',
+      {
+        contact_name: contactName,
+        billing_address: address,
+        shipping_address: address,
+      },
+    );
+
+    const contact = updateRes?.contact ?? {};
+    let billingAddressId =
+      contact.billing_address?.address_id ?? contact.billing_address_id;
+    let shippingAddressId =
+      contact.shipping_address?.address_id ?? contact.shipping_address_id;
+
+    if (!billingAddressId || !shippingAddressId) {
+      const addressRes = await this.http.request(
+        'GET',
+        this.inventoryUrl(`/contacts/${customerId}/address`),
+        'inventory',
+      );
+
+      const matchedAddress = (addressRes?.addresses ?? []).find((item: any) =>
+        this.addressMatchesZoho(item, address),
+      );
+
+      billingAddressId = billingAddressId ?? matchedAddress?.address_id;
+      shippingAddressId = shippingAddressId ?? matchedAddress?.address_id;
+    }
+
+    if (!billingAddressId || !shippingAddressId) {
+      throw new Error('Failed to resolve Zoho contact address IDs');
+    }
+
+    return {
+      billingAddressId: String(billingAddressId),
+      shippingAddressId: String(shippingAddressId),
+    };
   }
 
   // Simple in-memory cache: name.toLowerCase() → zoho salesperson_id
@@ -137,7 +243,7 @@ export class ZohoInventoryService {
     return { imageUrl, itemId, zohoToken: token, existingHash };
   }
 
-  async createSalesOrder(order: any, customerId: string, salespersonId?: string) {
+  async createSalesOrder(order: any, customerId: string, salespersonId?: string): Promise<string> {
     const missingZohoItems = (order.items || []).filter(
       (item: any) => !item.zohoItemId,
     );
@@ -150,19 +256,8 @@ export class ZohoInventoryService {
       );
     }
 
-    const addrLine = this.limitAddress(
-      order.address?.billingAddress || order.address?.addressLine || '',
-    );
-
-    console.log('[ZohoInventory] Address debug:', {
-      billingAddress: order.address?.billingAddress,
-      addressLine: order.address?.addressLine,
-      city: order.address?.city,
-      state: order.address?.state,
-      zip: order.address?.pincode,
-      computed_addrLine: addrLine,
-      addrLine_length: addrLine.length,
-    });
+    const { billingAddressId, shippingAddressId } =
+      await this.upsertContactAddresses(customerId, order);
 
     const payload: any = {
       customer_id: customerId,
@@ -174,8 +269,8 @@ export class ZohoInventoryService {
         quantity: item.quantity,
       })),
       shipping_charge: order.shippingCharge,
-      // Note: billing_address/shipping_address omitted — Zoho uses the contact's stored address.
-      // Sending it was causing "billing_address > 100 chars" errors from Zoho.
+      billing_address_id: billingAddressId,
+      shipping_address_id: shippingAddressId,
     };
 
     if (salespersonId) {
@@ -184,18 +279,6 @@ export class ZohoInventoryService {
     } else {
       console.warn('[ZohoInventory] ⚠️ No salesperson_id — Zoho may reject if salespersons are required');
     }
-
-    console.log('[ZohoInventory] Creating sales order payload:', JSON.stringify({
-      customer_id: payload.customer_id,
-      reference_number: payload.reference_number,
-      line_items: payload.line_items.map((li: any) => ({
-        item_id: li.item_id || '❌ MISSING',
-        name: li.name,
-        rate: li.rate,
-        quantity: li.quantity,
-      })),
-      shipping_charge: payload.shipping_charge,
-    }, null, 2));
 
     const response = await this.http.request(
       'POST',
@@ -460,5 +543,109 @@ export class ZohoInventoryService {
 
     console.log(`[Zoho] Created new contact: ${contactId} for ${user.mobile_number}`);
     return contactId;
+  }
+
+  /**
+   * Create an invoice from an existing sales order.
+   * Zoho will auto-populate line items from the SO.
+   */
+  async createInvoiceFromSalesOrder(
+    salesorderId: string,
+    customerId: string,
+  ): Promise<{ invoiceId: string; invoiceNumber: string }> {
+    const response = await this.http.request(
+      'POST',
+      this.inventoryUrl(`/invoices/fromsalesorder?salesorder_id=${salesorderId}`),
+      'inventory',
+    );
+
+    const invoice = response?.invoice;
+    if (!invoice?.invoice_id) {
+      throw new Error('Failed to create invoice — no invoice_id returned');
+    }
+
+    console.log(
+      `[Zoho] Invoice created: ${invoice.invoice_number} (${invoice.invoice_id}) from SO ${salesorderId}`,
+    );
+
+    return {
+      invoiceId: invoice.invoice_id,
+      invoiceNumber: invoice.invoice_number,
+    };
+  }
+
+  /**
+   * Record a customer payment against an invoice to mark it as Paid.
+   */
+  async recordPaymentForInvoice(
+    customerId: string,
+    invoiceId: string,
+    amount: number,
+    paymentReference: string,
+  ): Promise<string> {
+    const payload = {
+      customer_id: customerId,
+      payment_mode: 'Online Payment',
+      amount,
+      date: new Date().toISOString().split('T')[0], // YYYY-MM-DD
+      reference_number: paymentReference,
+      invoices: [
+        {
+          invoice_id: invoiceId,
+          amount_applied: amount,
+        },
+      ],
+    };
+
+    const response = await this.http.request(
+      'POST',
+      this.inventoryUrl('/customerpayments'),
+      'inventory',
+      payload,
+    );
+
+    const paymentId = response?.payment?.payment_id;
+    console.log(
+      `[Zoho] Payment recorded: ${paymentId} for invoice ${invoiceId} (₹${amount})`,
+    );
+
+    return paymentId;
+  }
+
+  /**
+   * Full flow: Create Sales Order → Invoice → Record Payment.
+   * Returns all IDs for tracking.
+   */
+  async createSalesOrderWithInvoice(
+    order: any,
+    customerId: string,
+    salespersonId?: string,
+  ): Promise<{
+    salesOrderId: string;
+    invoiceId: string;
+    invoiceNumber: string;
+    paymentId: string;
+  }> {
+    // 1. Create Sales Order
+    const salesOrderId = await this.createSalesOrder(order, customerId, salespersonId);
+    console.log(`[Zoho] Step 1/3: Sales Order created: ${salesOrderId}`);
+
+    // 2. Create Invoice from Sales Order
+    const { invoiceId, invoiceNumber } = await this.createInvoiceFromSalesOrder(
+      salesOrderId,
+      customerId,
+    );
+    console.log(`[Zoho] Step 2/3: Invoice created: ${invoiceNumber}`);
+
+    // 3. Record Payment to clear the invoice
+    const paymentId = await this.recordPaymentForInvoice(
+      customerId,
+      invoiceId,
+      order.finalAmount,
+      order.orderId, // Use app order ID as payment reference
+    );
+    console.log(`[Zoho] Step 3/3: Payment recorded: ${paymentId}`);
+
+    return { salesOrderId, invoiceId, invoiceNumber, paymentId };
   }
 }
